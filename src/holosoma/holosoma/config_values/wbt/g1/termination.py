@@ -47,4 +47,18 @@ g1_29dof_wbt_termination = TerminationManagerCfg(
     }
 )
 
-__all__ = ["g1_29dof_wbt_termination"]
+g1_29dof_wbt_recovery_termination = TerminationManagerCfg(
+    terms={
+        **g1_29dof_wbt_termination.terms,
+        "bad_tracking": TerminationTermCfg(
+            func="holosoma.managers.termination.terms.wbt:RecoveryAwareBadTracking",
+            params={
+                **g1_29dof_wbt_termination.terms["bad_tracking"].params,
+                "shoulder_height_threshold": 0.2,
+                "max_consecutive_bad_tracking_steps": 8,
+            },
+        ),
+    }
+)
+
+__all__ = ["g1_29dof_wbt_recovery_termination", "g1_29dof_wbt_termination"]

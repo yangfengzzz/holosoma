@@ -144,3 +144,31 @@ class BadTrackingZOnly(BadTracking):
             motion_command.body_pos_relative_w[:, body_idx, -1] - motion_command.robot_body_pos_w[:, body_idx, -1]
         )
         return torch.any(error > self.bad_motion_body_pos_threshold, dim=-1)
+
+
+class RecoveryAwareBadTracking(BadTrackingZOnly):
+    """Bad tracking term with hysteresis while the robot is in recovery mode."""
+
+    def __init__(self, cfg: TerminationTermCfg, env: WholeBodyTrackingManager):
+        super().__init__(cfg, env)
+        self.shoulder_height_threshold = float(cfg.params.get("shoulder_height_threshold", 0.2))
+        self.max_consecutive_bad_tracking_steps = int(cfg.params.get("max_consecutive_bad_tracking_steps", 8))
+        self._recovery_bad_tracking_counter = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+
+    def __call__(self, env: Any, **kwargs) -> torch.Tensor:
+        bad_tracking = super().__call__(env, **kwargs)
+        motion_command = self.env.command_manager.get_state("motion_command")
+        recovery_mask = motion_command.recovery_active_mask(self.shoulder_height_threshold)
+
+        self._recovery_bad_tracking_counter[~recovery_mask] = 0
+        self._recovery_bad_tracking_counter[recovery_mask & ~bad_tracking] = 0
+        self._recovery_bad_tracking_counter[recovery_mask & bad_tracking] += 1
+
+        recovery_exceeded = self._recovery_bad_tracking_counter >= self.max_consecutive_bad_tracking_steps
+        return (bad_tracking & ~recovery_mask) | (bad_tracking & recovery_mask & recovery_exceeded)
+
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
+        if env_ids is None:
+            self._recovery_bad_tracking_counter.zero_()
+        else:
+            self._recovery_bad_tracking_counter[env_ids] = 0

@@ -38,6 +38,24 @@ class WholeBodyTrackingManager(BaseTask):
         self.default_dof_pos_base = self.default_dof_pos_base.unsqueeze(0)  # (1, num_dof)
         self.default_dof_pos = self.default_dof_pos_base.repeat(self.num_envs, 1).clone()  # (num_envs, num_dof)
 
+    def _setup_robot_body_indices(self):
+        foot_body_names = [s for s in self.body_names if self.robot_config.foot_body_name in s]
+        self.feet_indices = torch.zeros(len(foot_body_names), dtype=torch.long, device=self.device, requires_grad=False)
+        for i, name in enumerate(foot_body_names):
+            self.feet_indices[i] = self.simulator.find_rigid_body_indice(name)
+
+        self.knee_joint_indices = torch.tensor(
+            [self.dof_names.index(name) for name in self.robot_config.knee_dof_names],
+            dtype=torch.long,
+            device=self.device,
+        )
+        ankle_names = self.robot_config.left_ankle_dof_names + self.robot_config.right_ankle_dof_names
+        self.ankle_joint_indices = torch.tensor(
+            [self.dof_names.index(name) for name in ankle_names],
+            dtype=torch.long,
+            device=self.device,
+        )
+
     def _pre_compute_observations_callback(self):
         self.base_quat[:] = self.simulator.base_quat[:]
 

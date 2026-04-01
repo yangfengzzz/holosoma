@@ -27,3 +27,5 @@ src/holosoma/holosoma/data/robots/converted_rank*/
 # other
 *.egg-info
 __pycache__
+
+src/holosoma_retargeting/holosoma_retargeting/data_utils/ubisoft-laforge-animation-dataset/

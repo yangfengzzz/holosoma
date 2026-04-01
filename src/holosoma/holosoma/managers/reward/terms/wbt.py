@@ -10,7 +10,7 @@ import torch
 from holosoma.config_types.reward import RewardTermCfg
 from holosoma.managers.command.terms.wbt import MotionCommand
 from holosoma.managers.reward.base import RewardTermBase
-from holosoma.utils.rotations import quat_error_magnitude
+from holosoma.utils.rotations import quat_error_magnitude, quat_rotate_inverse
 
 if TYPE_CHECKING:
     from holosoma.envs.wbt.wbt_manager import WholeBodyTrackingManager
@@ -21,6 +21,11 @@ def _get_motion_command_and_assert_type(env: WholeBodyTrackingManager) -> Motion
     assert motion_command is not None, "motion_command not found in command manager"
     assert isinstance(motion_command, MotionCommand), f"Expected MotionCommand, got {type(motion_command)}"
     return motion_command
+
+
+def _recovery_mask(env: WholeBodyTrackingManager, shoulder_height_threshold: float) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    return motion_command.recovery_active_mask(shoulder_height_threshold)
 
 
 #########################################################################################################
@@ -106,6 +111,78 @@ def motion_global_body_ang_vel(env: WholeBodyTrackingManager, sigma: float) -> t
     motion_command = _get_motion_command_and_assert_type(env)
     error = torch.sum(torch.square(motion_command.body_ang_vel_w - motion_command.robot_body_ang_vel_w), dim=-1)
     return torch.exp(-error.mean(-1) / sigma**2)
+
+
+def motion_com_support_alignment_exp(env: WholeBodyTrackingManager, sigma: float = 0.15) -> torch.Tensor:
+    robot_root_xy = env.simulator.robot_root_states[:, :2]
+    foot_xy = env.simulator._rigid_body_pos[:, env.feet_indices, :2]
+    support_xy = foot_xy.mean(dim=1)
+    error = torch.sum(torch.square(robot_root_xy - support_xy), dim=-1)
+    return torch.exp(-error / sigma**2)
+
+
+def feet_slip_penalty(env: WholeBodyTrackingManager, contact_height_threshold: float = 0.06) -> torch.Tensor:
+    foot_pos_z = env.simulator._rigid_body_pos[:, env.feet_indices, 2]
+    foot_vel_xy = env.simulator._rigid_body_vel[:, env.feet_indices, :2]
+    contact_mask = foot_pos_z < (foot_pos_z.min(dim=1, keepdim=True)[0] + contact_height_threshold)
+    return torch.sum(torch.norm(foot_vel_xy, dim=-1) * contact_mask.float(), dim=1)
+
+
+def close_feet_penalty(env: WholeBodyTrackingManager, close_feet_threshold: float = 0.12) -> torch.Tensor:
+    left_foot_xy = env.simulator._rigid_body_pos[:, env.feet_indices[0], :2]
+    right_foot_xy = env.simulator._rigid_body_pos[:, env.feet_indices[1], :2]
+    return (torch.norm(left_foot_xy - right_foot_xy, dim=-1) < close_feet_threshold).float()
+
+
+def root_orientation_penalty(env: WholeBodyTrackingManager) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    gravity = torch.tensor([[0.0, 0.0, -1.0]], device=env.device).repeat(env.num_envs, 1)
+    motion_gravity = quat_rotate_inverse(motion_command.ref_quat_w, gravity, w_last=True)
+    robot_gravity = quat_rotate_inverse(motion_command.robot_ref_quat_w, gravity, w_last=True)
+    return torch.sum(torch.square(motion_gravity[:, :2] - robot_gravity[:, :2]), dim=-1)
+
+
+def joint_action_rate_penalty(
+    env: WholeBodyTrackingManager,
+    joint_group: str,
+    shoulder_height_threshold: float = 0.2,
+    recovery_only: bool = False,
+) -> torch.Tensor:
+    joint_indices = getattr(env, f"{joint_group}_joint_indices")
+    actions = env.action_manager.action[:, joint_indices]
+    prev_actions = env.action_manager.prev_action[:, joint_indices]
+    penalty = torch.sum(torch.square(prev_actions - actions), dim=1)
+    if recovery_only:
+        penalty = penalty * _recovery_mask(env, shoulder_height_threshold).float()
+    return penalty
+
+
+def recovery_relative_shoulder_height_penalty(
+    env: WholeBodyTrackingManager,
+    shoulder_height_threshold: float = 0.2,
+) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    shoulder_gap = motion_command.reference_shoulder_height() - motion_command.robot_shoulder_height()
+    recovery_mask = motion_command.recovery_active_mask(shoulder_height_threshold)
+    return torch.square(torch.clamp(shoulder_gap, min=0.0)) * recovery_mask.float()
+
+
+def recovery_xy_root_movement_penalty(
+    env: WholeBodyTrackingManager,
+    shoulder_height_threshold: float = 0.2,
+) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    recovery_mask = motion_command.recovery_active_mask(shoulder_height_threshold)
+    error = torch.sum(torch.square(motion_command.robot_root_pos_w[:, :2] - motion_command.ref_pos_w[:, :2]), dim=-1)
+    return error * recovery_mask.float()
+
+
+def recovery_action_rate_penalty(
+    env: WholeBodyTrackingManager,
+    shoulder_height_threshold: float = 0.2,
+) -> torch.Tensor:
+    recovery_mask = _recovery_mask(env, shoulder_height_threshold)
+    return penalty_action_rate(env) * recovery_mask.float()
 
 
 # ================================================================================================

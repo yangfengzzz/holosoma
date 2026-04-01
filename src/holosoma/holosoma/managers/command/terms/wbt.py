@@ -12,6 +12,7 @@ from holosoma.envs.wbt.wbt_manager import WholeBodyTrackingManager
 from holosoma.managers.command.base import CommandTermBase
 from holosoma.utils.file_cache import cached_open
 from holosoma.utils.path import resolve_data_file_path
+from holosoma.utils.recovery_init_dataset import RecoveryInitDataset
 from holosoma.utils.rotations import (
     get_euler_xyz,
     quat_apply,
@@ -244,6 +245,84 @@ class AdaptiveTimestepsSampler:
         self.metrics["sampling_top1_bin"] = imax.float() / self.num_bins
 
 
+class LowKineticAnchorSampler:
+    """Sample reset anchors from low-kinetic segments and upweight failing anchors."""
+
+    def __init__(
+        self,
+        joint_vel: torch.Tensor,
+        device: str,
+        *,
+        window_size: int,
+        min_anchor_spacing: int,
+        ema_alpha: float,
+        uniform_ratio: float,
+        failure_weight: float,
+    ):
+        self.device = device
+        self.window_size = max(int(window_size), 1)
+        self.min_anchor_spacing = max(int(min_anchor_spacing), 1)
+        self.ema_alpha = float(ema_alpha)
+        self.uniform_ratio = float(uniform_ratio)
+        self.failure_weight = float(failure_weight)
+
+        kinetic_proxy = torch.sum(torch.square(joint_vel), dim=-1)
+        self.anchor_timesteps = self._extract_anchor_timesteps(kinetic_proxy)
+        self.anchor_weights = torch.ones(self.anchor_timesteps.shape[0], dtype=torch.float32, device=self.device)
+        self.metrics: dict[str, torch.Tensor] = {}
+
+    def _extract_anchor_timesteps(self, kinetic_proxy: torch.Tensor) -> torch.Tensor:
+        num_steps = int(kinetic_proxy.shape[0])
+        minima: list[int] = [0]
+        last_added = -self.min_anchor_spacing
+
+        for step in range(num_steps):
+            left = max(step - self.window_size, 0)
+            right = min(step + self.window_size + 1, num_steps)
+            local_window = kinetic_proxy[left:right]
+            if kinetic_proxy[step] > torch.min(local_window):
+                continue
+            if step - last_added < self.min_anchor_spacing:
+                if kinetic_proxy[step] < kinetic_proxy[minima[-1]]:
+                    minima[-1] = step
+                    last_added = step
+                continue
+            minima.append(step)
+            last_added = step
+
+        if minima[-1] != num_steps - 1:
+            minima.append(num_steps - 1)
+
+        return torch.tensor(sorted(set(minima)), dtype=torch.long, device=self.device)
+
+    @property
+    def sampling_probabilities(self) -> torch.Tensor:
+        probs = self.anchor_weights + self.uniform_ratio / float(self.anchor_weights.numel())
+        return probs / probs.sum()
+
+    def sample(self, num_samples: int) -> torch.Tensor:
+        sampled = torch.multinomial(self.sampling_probabilities, num_samples, replacement=True)
+        return self.anchor_timesteps[sampled]
+
+    def update_failed_timesteps(self, failed_time_steps: torch.Tensor) -> None:
+        if failed_time_steps.numel() == 0:
+            return
+
+        anchor_indices = torch.bucketize(failed_time_steps, self.anchor_timesteps, right=True) - 1
+        anchor_indices = torch.clamp(anchor_indices, min=0, max=self.anchor_timesteps.numel() - 1)
+        counts = torch.bincount(anchor_indices, minlength=self.anchor_timesteps.numel()).to(dtype=torch.float32)
+        target = 1.0 + counts * self.failure_weight
+        self.anchor_weights = (1.0 - self.ema_alpha) * self.anchor_weights + self.ema_alpha * target
+
+    def get_stats(self) -> None:
+        probs = self.sampling_probabilities
+        entropy = -(probs * (probs + 1e-12).log()).sum()
+        self.metrics["sampling_entropy"] = entropy / np.log(max(int(probs.numel()), 2))
+        pmax, imax = probs.max(dim=0)
+        self.metrics["sampling_top1_prob"] = pmax
+        self.metrics["sampling_top1_anchor_timestep"] = self.anchor_timesteps[imax].float()
+
+
 #########################################################################################################
 ## Helper functions
 #########################################################################################################
@@ -305,6 +384,11 @@ class MotionCommand(CommandTermBase):
         self.tracked_body_indexes = self._get_index_of_a_in_b(
             self.motion_cfg.body_names_to_track, robot_body_names, self.device
         )
+        shoulder_body_names = ["left_shoulder_roll_link", "right_shoulder_roll_link"]
+        self.shoulder_body_indices_in_robot = self._get_index_of_a_in_b(shoulder_body_names, robot_body_names, self.device)
+        self.shoulder_body_indices_in_motion = self._get_index_of_a_in_b(
+            shoulder_body_names, robot_body_names_alias, self.device
+        )
 
         # 3. get the name of the object, or indices of the object
         if self.motion.has_object:
@@ -316,11 +400,34 @@ class MotionCommand(CommandTermBase):
                 "Object is only supported in IsaacSim"
             )
 
-        # 4. get the adaptive timesteps sampler
-        if self.motion_cfg.use_adaptive_timesteps_sampler:
+        # 4. setup timestep samplers
+        sampling_strategy = self._sampling_strategy()
+        if sampling_strategy == MotionConfig.MotionSamplingStrategy.ADAPTIVE:
             self.adaptive_timesteps_sampler = AdaptiveTimestepsSampler(
                 self.motion.time_step_total, self.device, int(1 / (self._env.dt))
             )
+        else:
+            self.adaptive_timesteps_sampler = None
+
+        if sampling_strategy == MotionConfig.MotionSamplingStrategy.LOW_KINETIC:
+            sampler_cfg = self.motion_cfg.low_kinetic_sampling
+            self.low_kinetic_anchor_sampler = LowKineticAnchorSampler(
+                self.motion.joint_vel,
+                self.device,
+                window_size=sampler_cfg.anchor_window_size,
+                min_anchor_spacing=sampler_cfg.min_anchor_spacing,
+                ema_alpha=sampler_cfg.ema_alpha,
+                uniform_ratio=sampler_cfg.uniform_ratio,
+                failure_weight=sampler_cfg.failure_weight,
+            )
+        else:
+            self.low_kinetic_anchor_sampler = None
+
+        recovery_cfg = self.motion_cfg.recovery_init_dataset
+        if recovery_cfg.enabled and recovery_cfg.dataset_path:
+            self.recovery_init_dataset = RecoveryInitDataset(recovery_cfg.dataset_path, self.device)
+        else:
+            self.recovery_init_dataset = None
 
         # 5. metrics
         self.metrics: dict[str, torch.Tensor] = {}
@@ -337,22 +444,8 @@ class MotionCommand(CommandTermBase):
         if env_ids.numel() == 0:
             return
 
-        # 0. Sample the time steps
-        if self.motion_cfg.use_adaptive_timesteps_sampler:
-            # Match BeyondMimic behavior: update failed bins from environments
-            # that terminated before this reset, then sample new phases.
-            episode_failed = self._env.termination_manager.terminated[env_ids]
-            if torch.any(episode_failed):
-                failed_at_time_step = self.time_steps[env_ids][episode_failed]
-                self.adaptive_timesteps_sampler.update_current_bin_failed_count(failed_at_time_step)
-            phase = self.adaptive_timesteps_sampler.sample(env_ids.numel())
-        else:
-            phase = torch.rand(env_ids.numel(), device=self.device)
-
-        if self._env.is_evaluating:
-            phase = torch.zeros_like(phase)
-
-        self.time_steps[env_ids] = (phase * (self.motion.time_step_total - 1)).long()
+        self._update_sampling_failures(env_ids)
+        self.time_steps[env_ids] = self._sample_reference_timesteps(env_ids)
 
         # Handle start_at_timestep_zero_prob
         prob = self.motion_cfg.start_at_timestep_zero_prob
@@ -445,7 +538,25 @@ class MotionCommand(CommandTermBase):
             torch.rand(root_ang_vel.shape, device=self.device) - 0.5
         ) * 2 * root_ang_vel_noise_rpy.unsqueeze(0)  # (num_envs, 3)
 
-        # 3. Set the robot states in simulator
+        # 3. Optionally replace reset state with a sampled recovery initialization.
+        recovery_mask = self._sample_recovery_reset_mask(env_ids)
+        self.last_reset_used_recovery[env_ids] = recovery_mask
+        if recovery_mask.any():
+            recovery_env_ids = env_ids[recovery_mask]
+            recovery_batch = self.recovery_init_dataset.sample(
+                recovery_env_ids.numel(),
+                yaw_augmentation=self.motion_cfg.recovery_init_dataset.yaw_augmentation,
+            )
+            target_dof_pos[recovery_mask] = recovery_batch.dof_pos
+            target_dof_vel[recovery_mask] = recovery_batch.dof_vel
+            target_root_pos[recovery_mask] = recovery_batch.root_states[:, :3] + self._env.simulator.scene.env_origins[
+                recovery_env_ids
+            ]
+            target_root_rot[recovery_mask] = recovery_batch.root_states[:, 3:7]
+            target_root_lin_vel[recovery_mask] = recovery_batch.root_states[:, 7:10]
+            target_root_ang_vel[recovery_mask] = recovery_batch.root_states[:, 10:13]
+
+        # 4. Set the robot states in simulator
         self._env.simulator.dof_pos[env_ids] = target_dof_pos
         self._env.simulator.dof_vel[env_ids] = target_dof_vel
 
@@ -454,7 +565,7 @@ class MotionCommand(CommandTermBase):
         self._env.simulator.robot_root_states[env_ids, 7:10] = target_root_lin_vel
         self._env.simulator.robot_root_states[env_ids, 10:13] = target_root_ang_vel
 
-        # 4. Set the object states in simulator
+        # 5. Set the object states in simulator
         if self.motion.has_object:
             obj_pos = self.object_pos_w[env_ids]
             obj_ori = self.object_quat_w[env_ids]
@@ -553,7 +664,7 @@ class MotionCommand(CommandTermBase):
         )
 
         ### 1.3 update the adaptive timesteps sampler
-        if self.motion_cfg.use_adaptive_timesteps_sampler:
+        if self.adaptive_timesteps_sampler is not None:
             self.adaptive_timesteps_sampler.update_bin_failed_count()
 
     @property
@@ -718,6 +829,7 @@ class MotionCommand(CommandTermBase):
 
     def init_buffers(self):
         self.time_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.last_reset_used_recovery = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self.body_pos_relative_w = torch.zeros(
             self.num_envs, len(self.motion_cfg.body_names_to_track), 3, device=self.device
         )  # type: ignore[arg-type]
@@ -726,7 +838,7 @@ class MotionCommand(CommandTermBase):
         )  # type: ignore[arg-type]
         self.body_quat_relative_w[:, :, 0] = 1.0
 
-        if self.motion_cfg.use_adaptive_timesteps_sampler:
+        if self.adaptive_timesteps_sampler is not None:
             self.adaptive_timesteps_sampler.init_buffers()
 
     def update_metrics(self):
@@ -754,7 +866,7 @@ class MotionCommand(CommandTermBase):
         self.metrics["motion/error_joint_pos"] = torch.norm(self.joint_pos - self.robot_joint_pos, dim=-1)
         self.metrics["motion/error_joint_vel"] = torch.norm(self.joint_vel - self.robot_joint_vel, dim=-1)
 
-        if self.motion_cfg.use_adaptive_timesteps_sampler:
+        if self.adaptive_timesteps_sampler is not None:
             self.adaptive_timesteps_sampler.get_stats()
             self.metrics["motion/adaptive_timesteps_sampler_entropy"] = self.adaptive_timesteps_sampler.metrics[
                 "sampling_entropy"
@@ -765,10 +877,88 @@ class MotionCommand(CommandTermBase):
             self.metrics["motion/adaptive_timesteps_sampler_top1_bin"] = self.adaptive_timesteps_sampler.metrics[
                 "sampling_top1_bin"
             ]
+        if self.low_kinetic_anchor_sampler is not None:
+            self.low_kinetic_anchor_sampler.get_stats()
+            self.metrics["motion/low_kinetic_sampler_entropy"] = self.low_kinetic_anchor_sampler.metrics[
+                "sampling_entropy"
+            ]
+            self.metrics["motion/low_kinetic_sampler_top1_prob"] = self.low_kinetic_anchor_sampler.metrics[
+                "sampling_top1_prob"
+            ]
+            self.metrics["motion/low_kinetic_sampler_top1_anchor_timestep"] = self.low_kinetic_anchor_sampler.metrics[
+                "sampling_top1_anchor_timestep"
+            ]
+        self.metrics["motion/reset_recovery_fraction"] = self.last_reset_used_recovery.float().mean()
+
+    def recovery_active_mask(self, shoulder_height_threshold: float) -> torch.Tensor:
+        shoulder_gap = self.reference_shoulder_height() - self.robot_shoulder_height()
+        return shoulder_gap > shoulder_height_threshold
+
+    def reference_shoulder_height(self) -> torch.Tensor:
+        return self.motion.body_pos_w[self.time_steps][:, self.shoulder_body_indices_in_motion, 2].mean(dim=1)
+
+    def robot_shoulder_height(self) -> torch.Tensor:
+        return self._env.simulator._rigid_body_pos[:, self.shoulder_body_indices_in_robot, 2].mean(dim=1)
 
     #########################################################################################
     ## Internal helpers
     #########################################################################################
+    def _sampling_strategy(self) -> MotionConfig.MotionSamplingStrategy:
+        strategy = self.motion_cfg.sampling_strategy
+        if (
+            strategy == MotionConfig.MotionSamplingStrategy.UNIFORM
+            and self.motion_cfg.use_adaptive_timesteps_sampler
+        ):
+            return MotionConfig.MotionSamplingStrategy.ADAPTIVE
+        return strategy
+
+    def _update_sampling_failures(self, env_ids: torch.Tensor) -> None:
+        terminated = self._env.termination_manager.terminated[env_ids]
+        if not torch.any(terminated):
+            return
+        failed_at_time_step = self.time_steps[env_ids][terminated]
+        if self.adaptive_timesteps_sampler is not None:
+            self.adaptive_timesteps_sampler.update_current_bin_failed_count(failed_at_time_step)
+        if self.low_kinetic_anchor_sampler is not None:
+            self.low_kinetic_anchor_sampler.update_failed_timesteps(failed_at_time_step)
+
+    def _sample_reference_timesteps(self, env_ids: torch.Tensor) -> torch.Tensor:
+        strategy = self._sampling_strategy()
+
+        if self._env.is_evaluating:
+            return torch.zeros(env_ids.numel(), dtype=torch.long, device=self.device)
+
+        if strategy == MotionConfig.MotionSamplingStrategy.ADAPTIVE and self.adaptive_timesteps_sampler is not None:
+            phase = self.adaptive_timesteps_sampler.sample(env_ids.numel())
+            sampled = (phase * (self.motion.time_step_total - 1)).long()
+        elif strategy == MotionConfig.MotionSamplingStrategy.LOW_KINETIC and self.low_kinetic_anchor_sampler is not None:
+            sampled = self.low_kinetic_anchor_sampler.sample(env_ids.numel())
+        else:
+            phase = torch.rand(env_ids.numel(), device=self.device)
+            sampled = (phase * (self.motion.time_step_total - 1)).long()
+
+        prob = self.motion_cfg.start_at_timestep_zero_prob
+        if prob >= 1.0:
+            sampled.zero_()
+        elif prob > 0.0:
+            rand_vals = torch.rand_like(sampled, dtype=torch.float32)
+            sampled = torch.where(rand_vals < prob, torch.zeros_like(sampled), sampled)
+
+        already_last_timestep_mask = sampled == self.motion.time_step_total - 1
+        return torch.where(already_last_timestep_mask, self.motion.time_step_total - 2, sampled)
+
+    def _sample_recovery_reset_mask(self, env_ids: torch.Tensor) -> torch.Tensor:
+        recovery_cfg = self.motion_cfg.recovery_init_dataset
+        if self.recovery_init_dataset is None or not recovery_cfg.enabled or self._env.is_evaluating:
+            return torch.zeros(env_ids.numel(), dtype=torch.bool, device=self.device)
+
+        if recovery_cfg.sample_probability <= 0.0:
+            return torch.zeros(env_ids.numel(), dtype=torch.bool, device=self.device)
+        if recovery_cfg.sample_probability >= 1.0:
+            return torch.ones(env_ids.numel(), dtype=torch.bool, device=self.device)
+
+        return torch.rand(env_ids.numel(), device=self.device) < recovery_cfg.sample_probability
+
     def _maybe_add_default_pose_transition(self, *, prepend: bool) -> None:
         """Shared path for optionally inserting default-pose interpolation before/after the clip."""
         enabled = self.motion_cfg.enable_default_pose_prepend if prepend else self.motion_cfg.enable_default_pose_append

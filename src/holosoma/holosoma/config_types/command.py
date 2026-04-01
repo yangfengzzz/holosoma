@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import field
+from enum import Enum
 from typing import Any
 
 from pydantic.dataclasses import dataclass
@@ -96,8 +97,20 @@ class MotionConfig:
     """Key body names to track, used for reward/termination computation."""
 
     # motion sampling related
+    class MotionSamplingStrategy(str, Enum):
+        UNIFORM = "uniform"
+        ADAPTIVE = "adaptive"
+        LOW_KINETIC = "low_kinetic"
+
     use_adaptive_timesteps_sampler: bool = False
     """During training, whether to prioritize training on motion segments where the robot fails often."""
+
+    sampling_strategy: MotionSamplingStrategy = MotionSamplingStrategy.UNIFORM
+    """How reference timesteps are sampled during reset.
+
+    ``use_adaptive_timesteps_sampler`` is preserved for backward compatibility and
+    maps to ``adaptive`` when this field remains ``uniform``.
+    """
 
     start_at_timestep_zero_prob: float = 0.2
     """Probability of starting at timestep zero."""
@@ -125,3 +138,40 @@ class MotionConfig:
 
     # noise related
     noise_to_initial_pose: NoiseToInitialPoseConfig = field(default_factory=NoiseToInitialPoseConfig)
+
+    @dataclass(frozen=True)
+    class LowKineticSamplingConfig:
+        anchor_window_size: int = 15
+        """Half-window used to detect local minima of joint kinetic proxy."""
+
+        min_anchor_spacing: int = 10
+        """Minimum spacing between selected anchor timesteps."""
+
+        ema_alpha: float = 0.05
+        """EMA coefficient for updating anchor failure weights."""
+
+        uniform_ratio: float = 0.1
+        """Uniform exploration mass mixed into anchor sampling probabilities."""
+
+        failure_weight: float = 1.0
+        """Multiplier applied to new failure counts before EMA update."""
+
+    low_kinetic_sampling: LowKineticSamplingConfig = field(default_factory=LowKineticSamplingConfig)
+    """Configuration for low-kinetic-energy anchor sampling."""
+
+    @dataclass(frozen=True)
+    class RecoveryInitDatasetConfig:
+        enabled: bool = False
+        """Whether recovery-state resets are enabled."""
+
+        dataset_path: str = ""
+        """Path to an `.npz` file produced by the recovery dataset generator."""
+
+        sample_probability: float = 0.5
+        """Probability of using a sampled recovery state instead of motion-state reset."""
+
+        yaw_augmentation: bool = True
+        """Whether to randomize the global yaw of sampled recovery states at reset time."""
+
+    recovery_init_dataset: RecoveryInitDatasetConfig = field(default_factory=RecoveryInitDatasetConfig)
+    """Optional dataset of gravity-settled recovery initial states."""

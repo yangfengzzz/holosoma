@@ -42,6 +42,24 @@ motion_config_w_object = replace(
     motion_file="holosoma/data/motions/g1_29dof/whole_body_tracking/sub3_largebox_003_mj_w_obj.npz",
 )
 
+motion_config_recovery = replace(
+    motion_config,
+    sampling_strategy=MotionConfig.MotionSamplingStrategy.LOW_KINETIC,
+    recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
+        enabled=False,
+        dataset_path="./artifacts/recovery_init/g1_ground_v1.npz",
+        sample_probability=0.5,
+        yaw_augmentation=True,
+    ),
+    low_kinetic_sampling=MotionConfig.LowKineticSamplingConfig(
+        anchor_window_size=15,
+        min_anchor_spacing=10,
+        ema_alpha=0.05,
+        uniform_ratio=0.1,
+        failure_weight=1.0,
+    ),
+)
+
 g1_29dof_wbt_command = CommandManagerCfg(
     params={},
     setup_terms={
@@ -76,7 +94,20 @@ g1_29dof_wbt_command_w_object = replace(
     },
 )
 
+g1_29dof_wbt_recovery_command = replace(
+    g1_29dof_wbt_command,
+    setup_terms={
+        "motion_command": CommandTermCfg(
+            func="holosoma.managers.command.terms.wbt:MotionCommand",
+            params={
+                "motion_config": motion_config_recovery,
+            },
+        )
+    },
+)
+
 __all__ = [
     "g1_29dof_wbt_command",
+    "g1_29dof_wbt_recovery_command",
     "g1_29dof_wbt_command_w_object",
 ]

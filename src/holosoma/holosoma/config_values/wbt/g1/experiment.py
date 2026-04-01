@@ -191,9 +191,22 @@ g1_29dof_wbt_fast_sac_w_object = replace(
     ),
 )
 
+g1_29dof_wbt_recovery_fast_sac = replace(
+    g1_29dof_wbt_fast_sac,
+    training=replace(
+        g1_29dof_wbt_fast_sac.training,
+        project="WholeBodyTrackingRecovery",
+        name="g1_29dof_wbt_recovery_fast_sac_manager",
+    ),
+    command=command.g1_29dof_wbt_recovery_command,
+    termination=termination.g1_29dof_wbt_recovery_termination,
+    reward=reward.g1_29dof_wbt_recovery_fast_sac_reward,
+)
+
 __all__ = [
     "g1_29dof_wbt",
     "g1_29dof_wbt_fast_sac",
+    "g1_29dof_wbt_recovery_fast_sac",
     "g1_29dof_wbt_fast_sac_w_object",
     "g1_29dof_wbt_w_object",
 ]
