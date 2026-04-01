@@ -45,6 +45,7 @@ motion_config_w_object = replace(
 motion_config_recovery = replace(
     motion_config,
     sampling_strategy=MotionConfig.MotionSamplingStrategy.LOW_KINETIC,
+    recovery_shoulder_height_threshold=1.0,
     recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
         enabled=False,
         dataset_path="./artifacts/recovery_init/g1_ground_v1.npz",
@@ -65,6 +66,7 @@ kfa_motion_file_placeholder = "./datasets/KungFuAthleteBot/org_smoothed_mj/1317_
 motion_config_stand = replace(
     motion_config,
     motion_file=kfa_motion_file_placeholder,
+    recovery_shoulder_height_threshold=1.0,
 )
 
 g1_29dof_wbt_command = CommandManagerCfg(

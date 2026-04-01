@@ -175,3 +175,6 @@ class MotionConfig:
 
     recovery_init_dataset: RecoveryInitDatasetConfig = field(default_factory=RecoveryInitDatasetConfig)
     """Optional dataset of gravity-settled recovery initial states."""
+
+    recovery_shoulder_height_threshold: float = 1.0
+    """Shared shoulder-height threshold used to detect recovery mode."""

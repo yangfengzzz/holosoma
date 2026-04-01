@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import torch
 
 from holosoma.envs.base_task.base_task import BaseTask
+from holosoma.utils.module_utils import get_holosoma_root
 
 # from holosoma.envs.legged_base_task.legged_robot_base import LeggedRobotBase
 from holosoma.utils.simulator_config import SimulatorType
@@ -55,6 +58,34 @@ class WholeBodyTrackingManager(BaseTask):
             dtype=torch.long,
             device=self.device,
         )
+        self.rigid_body_masses = self._load_robot_body_masses()
+        self.com_body_indices = torch.nonzero(self.rigid_body_masses > 0.0, as_tuple=False).flatten()
+
+    def _load_robot_body_masses(self) -> torch.Tensor:
+        asset_root = self.robot_config.asset.asset_root
+        if asset_root.startswith("@holosoma/"):
+            asset_root = asset_root.replace("@holosoma", get_holosoma_root())
+
+        urdf_path = Path(asset_root) / self.robot_config.asset.urdf_file
+        masses_by_name: dict[str, float] = {}
+        if urdf_path.exists():
+            root = ET.parse(urdf_path).getroot()
+            for link in root.findall("link"):
+                name = link.attrib.get("name")
+                inertial = link.find("inertial")
+                mass_node = inertial.find("mass") if inertial is not None else None
+                if name is None or mass_node is None:
+                    continue
+                masses_by_name[name] = float(mass_node.attrib.get("value", "0.0"))
+
+        masses = torch.tensor(
+            [masses_by_name.get(name, 0.0) for name in self.body_names],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        if torch.count_nonzero(masses).item() == 0:
+            masses = torch.ones(len(self.body_names), dtype=torch.float32, device=self.device)
+        return masses
 
     def _pre_compute_observations_callback(self):
         self.base_quat[:] = self.simulator.base_quat[:]

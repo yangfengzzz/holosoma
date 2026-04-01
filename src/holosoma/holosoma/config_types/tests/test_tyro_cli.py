@@ -17,6 +17,10 @@ def test_kfa_stand_experiment_cli_surface():
     assert config.robot.asset.urdf_file.endswith("g1/g1_29dof_kfa.urdf")
     assert config.robot.asset.robot_type == "g1_29dof"
     assert "head_link" in config.robot.body_names
+    assert config.command.setup_terms["motion_command"].params["motion_config"].recovery_shoulder_height_threshold == 1.0
+    assert config.reward.terms["motion_relative_body_position_error_exp"].weight == 4.0
+    assert config.reward.terms["motion_relative_body_position_error_exp"].tags == ["r_mtr", "tracking"]
+    assert "recovery_action_rate_penalty" not in config.reward.terms
 
 
 def test_existing_wbt_fast_sac_surface_is_unchanged():
@@ -24,3 +28,4 @@ def test_existing_wbt_fast_sac_surface_is_unchanged():
 
     assert config.robot.asset.xml_file.endswith("g1/g1_29dof.xml")
     assert "head_link" not in config.robot.body_names
+    assert "action_rate_l2" in config.reward.terms

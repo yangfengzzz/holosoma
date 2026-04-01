@@ -40,8 +40,9 @@ def test_low_kinetic_anchor_sampler_extracts_and_updates_weights():
 
     assert sampler.anchor_timesteps.tolist() == [0, 3, 5, 7]
     sampler.update_failed_timesteps(torch.tensor([4, 7], dtype=torch.long))
-    assert sampler.anchor_weights[1].item() > 1.0
-    assert sampler.anchor_weights[-1].item() > 1.0
+    assert sampler.anchor_weights.tolist() == pytest.approx([1.0, 1.5, 1.0, 1.5])
+    sampler.update_failed_timesteps(torch.tensor([5], dtype=torch.long))
+    assert sampler.anchor_weights.tolist() == pytest.approx([1.0, 1.5, 1.5, 1.5])
 
 
 def test_recovery_dataset_sampling_and_yaw_augmentation(tmp_path):
@@ -63,7 +64,10 @@ def test_recovery_dataset_sampling_and_yaw_augmentation(tmp_path):
 
 
 def test_recovery_action_rate_penalty_is_gated_by_recovery_state():
-    motion_command = SimpleNamespace(recovery_active_mask=lambda threshold: torch.tensor([True, False]))
+    motion_command = SimpleNamespace(
+        motion_cfg=SimpleNamespace(recovery_shoulder_height_threshold=1.0),
+        recovery_active_mask=lambda threshold: torch.tensor([True, False]),
+    )
     env = SimpleNamespace(
         action_manager=SimpleNamespace(
             action=torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
@@ -72,8 +76,114 @@ def test_recovery_action_rate_penalty_is_gated_by_recovery_state():
     )
 
     with patch.object(wbt_reward_terms, "_get_motion_command_and_assert_type", return_value=motion_command):
-        penalty = wbt_reward_terms.recovery_action_rate_penalty(env, shoulder_height_threshold=0.2)
+        penalty = wbt_reward_terms.recovery_action_rate_penalty(env, shoulder_height_threshold=None)
     assert penalty.tolist() == [5.0, 0.0]
+
+
+def test_recovery_shoulder_height_threshold_defaults_to_motion_config():
+    motion_command = SimpleNamespace(
+        motion_cfg=SimpleNamespace(recovery_shoulder_height_threshold=1.0),
+        recovery_active_mask=lambda threshold: torch.tensor([threshold == 1.0, False]),
+    )
+    env = SimpleNamespace(
+        action_manager=SimpleNamespace(
+            action=torch.tensor([[1.0, 0.0], [0.0, 0.0]]),
+            prev_action=torch.zeros((2, 2)),
+        ),
+    )
+
+    with patch.object(wbt_reward_terms, "_get_motion_command_and_assert_type", return_value=motion_command):
+        penalty = wbt_reward_terms.recovery_action_rate_penalty(env, shoulder_height_threshold=None)
+    assert penalty.tolist() == [1.0, 0.0]
+
+
+def test_motion_com_support_alignment_uses_support_foot():
+    env = SimpleNamespace(
+        num_envs=1,
+        device="cpu",
+        com_body_indices=torch.tensor([0, 1]),
+        rigid_body_masses=torch.tensor([3.0, 1.0, 0.0, 0.0]),
+        feet_indices=torch.tensor([2, 3]),
+        simulator=SimpleNamespace(
+            _rigid_body_pos=torch.tensor(
+                [[[0.0, 0.0, 0.5], [0.0, 0.0, 0.5], [0.0, 0.0, 0.0], [2.0, 0.0, 0.1]]], dtype=torch.float32
+            ),
+            contact_forces=torch.tensor(
+                [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 10.0], [0.0, 0.0, 1.0]]], dtype=torch.float32
+            ),
+        ),
+    )
+
+    reward = wbt_reward_terms.motion_com_support_alignment_exp(env, sigma=0.15, contact_force_threshold=1.0)
+    assert reward.item() == pytest.approx(1.0, rel=1e-6)
+
+
+def test_feet_slip_penalty_uses_contact_force_stance_detection():
+    env = SimpleNamespace(
+        feet_indices=torch.tensor([0, 1]),
+        simulator=SimpleNamespace(
+            contact_forces=torch.tensor(
+                [[[0.0, 0.0, 5.0], [0.0, 0.0, 0.2]]],
+                dtype=torch.float32,
+            ),
+            _rigid_body_vel=torch.tensor(
+                [[[3.0, 4.0, 0.0], [6.0, 8.0, 0.0]]],
+                dtype=torch.float32,
+            ),
+        ),
+    )
+
+    penalty = wbt_reward_terms.feet_slip_penalty(env, contact_force_threshold=1.0)
+    assert penalty.item() == pytest.approx(5.0)
+
+
+def test_close_feet_penalty_only_applies_while_standing():
+    motion_command = SimpleNamespace(
+        motion_cfg=SimpleNamespace(recovery_shoulder_height_threshold=1.0),
+        recovery_active_mask=lambda threshold: torch.tensor([False, True]),
+    )
+    env = SimpleNamespace(
+        num_envs=2,
+        device="cpu",
+        feet_indices=torch.tensor([0, 1]),
+        simulator=SimpleNamespace(
+            _rigid_body_pos=torch.tensor(
+                [
+                    [[0.0, 0.0, 0.0], [0.05, 0.0, 0.0]],
+                    [[0.0, 0.0, 0.0], [0.05, 0.0, 0.0]],
+                ],
+                dtype=torch.float32,
+            ),
+            contact_forces=torch.tensor(
+                [
+                    [[0.0, 0.0, 5.0], [0.0, 0.0, 5.0]],
+                    [[0.0, 0.0, 5.0], [0.0, 0.0, 5.0]],
+                ],
+                dtype=torch.float32,
+            ),
+        ),
+    )
+
+    with patch.object(wbt_reward_terms, "_get_motion_command_and_assert_type", return_value=motion_command):
+        penalty = wbt_reward_terms.close_feet_penalty(env, close_feet_threshold=0.12, shoulder_height_threshold=None)
+    assert penalty.tolist() == [1.0, 0.0]
+
+
+def test_joint_action_rate_penalty_targets_requested_group():
+    env = SimpleNamespace(
+        knee_joint_indices=torch.tensor([0, 2]),
+        ankle_joint_indices=torch.tensor([1, 3]),
+        action_manager=SimpleNamespace(
+            action=torch.tensor([[1.0, 10.0, 2.0, 20.0]]),
+            prev_action=torch.zeros((1, 4)),
+        ),
+    )
+
+    knee_penalty = wbt_reward_terms.joint_action_rate_penalty(env, joint_group="knee")
+    ankle_penalty = wbt_reward_terms.joint_action_rate_penalty(env, joint_group="ankle")
+
+    assert knee_penalty.item() == pytest.approx(5.0)
+    assert ankle_penalty.item() == pytest.approx(500.0)
 
 
 def test_recovery_aware_bad_tracking_hysteresis():
@@ -93,7 +203,7 @@ def test_recovery_aware_bad_tracking_hysteresis():
             "bad_motion_body_pos_body_names": ["left_ankle_roll_link"],
             "bad_object_pos_threshold": 0.25,
             "bad_object_ori_threshold": 0.8,
-            "shoulder_height_threshold": 0.2,
+            "shoulder_height_threshold": 1.0,
             "max_consecutive_bad_tracking_steps": 2,
         },
     )

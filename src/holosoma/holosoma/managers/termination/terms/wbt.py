@@ -151,7 +151,7 @@ class RecoveryAwareBadTracking(BadTrackingZOnly):
 
     def __init__(self, cfg: TerminationTermCfg, env: WholeBodyTrackingManager):
         super().__init__(cfg, env)
-        self.shoulder_height_threshold = float(cfg.params.get("shoulder_height_threshold", 0.2))
+        self.shoulder_height_threshold = cfg.params.get("shoulder_height_threshold")
         self.max_consecutive_bad_tracking_steps = int(cfg.params.get("max_consecutive_bad_tracking_steps", 8))
         self._recovery_bad_tracking_counter = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
 

@@ -56,7 +56,7 @@ g1_29dof_wbt_recovery_termination = TerminationManagerCfg(
             func="holosoma.managers.termination.terms.wbt:RecoveryAwareBadTracking",
             params={
                 **g1_29dof_wbt_termination.terms["bad_tracking"].params,
-                "shoulder_height_threshold": 0.2,
+                "shoulder_height_threshold": 1.0,
                 "max_consecutive_bad_tracking_steps": 8,
             },
         ),

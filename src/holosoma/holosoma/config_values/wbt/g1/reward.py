@@ -162,7 +162,93 @@ g1_29dof_wbt_recovery_fast_sac_reward = RewardManagerCfg(
     }
 )
 
-g1_29dof_wbt_stand_fast_sac_reward = replace(g1_29dof_wbt_fast_sac_reward)
+g1_29dof_wbt_stand_fast_sac_reward = RewardManagerCfg(
+    terms={
+        "motion_relative_body_position_error_exp": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_relative_body_position_error_exp",
+            params={"sigma": 0.3},
+            weight=4.0,
+            tags=["r_mtr", "tracking"],
+        ),
+        "motion_relative_body_orientation_error_exp": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_relative_body_orientation_error_exp",
+            params={"sigma": 0.4},
+            weight=2.0,
+            tags=["r_mtr", "tracking"],
+        ),
+        "motion_global_body_ang_vel": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_global_body_ang_vel",
+            params={"sigma": 3.14},
+            weight=1.0,
+            tags=["r_mtr", "tracking"],
+        ),
+        "motion_com_support_alignment_exp": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_com_support_alignment_exp",
+            params={"sigma": 0.15, "contact_force_threshold": 1.0},
+            weight=2.0,
+            tags=["r_mtr", "stability"],
+        ),
+        "close_feet_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:close_feet_penalty",
+            params={"close_feet_threshold": 0.12, "shoulder_height_threshold": None, "contact_force_threshold": 1.0},
+            weight=-1000.0,
+            tags=["r_mtr", "penalty"],
+        ),
+        "feet_slip_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:feet_slip_penalty",
+            params={"contact_force_threshold": 1.0},
+            weight=-2.0,
+            tags=["r_mtr", "penalty"],
+        ),
+        "root_orientation_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:root_orientation_penalty",
+            weight=-1.0,
+            tags=["r_mtr", "penalty"],
+        ),
+        "knee_action_rate_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:joint_action_rate_penalty",
+            params={"joint_group": "knee"},
+            weight=-3.0,
+            tags=["r_mtr", "penalty"],
+        ),
+        "ankle_action_rate_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:joint_action_rate_penalty",
+            params={"joint_group": "ankle"},
+            weight=-20.0,
+            tags=["r_mtr", "penalty"],
+        ),
+        "limits_dof_pos": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:limits_dof_pos",
+            params={"soft_dof_pos_limit": 0.9},
+            weight=-100.0,
+            tags=["r_mtr", "penalty"],
+        ),
+    }
+)
+
+g1_29dof_wbt_recovery_fast_sac_reward = RewardManagerCfg(
+    terms={
+        **g1_29dof_wbt_stand_fast_sac_reward.terms,
+        "recovery_relative_shoulder_height_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:recovery_relative_shoulder_height_penalty",
+            params={"shoulder_height_threshold": None},
+            weight=-2.0,
+            tags=["r_rc", "penalty"],
+        ),
+        "recovery_xy_root_movement_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:recovery_xy_root_movement_penalty",
+            params={"shoulder_height_threshold": None},
+            weight=-1.0,
+            tags=["r_rc", "penalty"],
+        ),
+        "recovery_action_rate_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:recovery_action_rate_penalty",
+            params={"shoulder_height_threshold": None},
+            weight=-2.0,
+            tags=["r_rc", "penalty"],
+        ),
+    }
+)
 
 __all__ = [
     "g1_29dof_wbt_fast_sac_reward",

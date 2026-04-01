@@ -311,8 +311,9 @@ class LowKineticAnchorSampler:
         anchor_indices = torch.bucketize(failed_time_steps, self.anchor_timesteps, right=True) - 1
         anchor_indices = torch.clamp(anchor_indices, min=0, max=self.anchor_timesteps.numel() - 1)
         counts = torch.bincount(anchor_indices, minlength=self.anchor_timesteps.numel()).to(dtype=torch.float32)
-        target = 1.0 + counts * self.failure_weight
-        self.anchor_weights = (1.0 - self.ema_alpha) * self.anchor_weights + self.ema_alpha * target
+        # Eq. 17 is not fully specified in the paper release notes, so we use a
+        # persistent additive update on the nearest preceding anchor.
+        self.anchor_weights = self.anchor_weights + (self.ema_alpha * self.failure_weight * counts)
 
     def get_stats(self) -> None:
         probs = self.sampling_probabilities
@@ -890,9 +891,17 @@ class MotionCommand(CommandTermBase):
             ]
         self.metrics["motion/reset_recovery_fraction"] = self.last_reset_used_recovery.float().mean()
 
-    def recovery_active_mask(self, shoulder_height_threshold: float) -> torch.Tensor:
-        shoulder_gap = self.reference_shoulder_height() - self.robot_shoulder_height()
-        return shoulder_gap > shoulder_height_threshold
+    def recovery_active_mask(self, shoulder_height_threshold: float | None = None) -> torch.Tensor:
+        threshold = (
+            self.motion_cfg.recovery_shoulder_height_threshold
+            if shoulder_height_threshold is None
+            else shoulder_height_threshold
+        )
+        shoulder_gap = self.recovery_shoulder_height_gap()
+        return shoulder_gap > threshold
+
+    def recovery_shoulder_height_gap(self) -> torch.Tensor:
+        return self.reference_shoulder_height() - self.robot_shoulder_height()
 
     def reference_shoulder_height(self) -> torch.Tensor:
         return self.motion.body_pos_w[self.time_steps][:, self.shoulder_body_indices_in_motion, 2].mean(dim=1)
