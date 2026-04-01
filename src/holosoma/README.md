@@ -93,6 +93,13 @@ python src/holosoma/holosoma/train_agent.py \
     exp:g1-29dof-wbt-fast-sac \
     logger:wandb
 
+# KungFuAthleteBot / paper-facing Ground stand preset
+source scripts/source_isaacsim_setup.sh
+python src/holosoma/holosoma/train_agent.py \
+    exp:g1-29dof-wbt-stand-fast-sac \
+    logger:wandb \
+    --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz
+
 # G1 with PPO
 source scripts/source_isaacsim_setup.sh
 python src/holosoma/holosoma/train_agent.py \
@@ -115,6 +122,8 @@ python src/holosoma/holosoma/replay.py \
 ```
 
 Once checkpoints are saved, you can evaluate policies using [In-Training Evaluation](#in-training-evaluation) (same simulator as training) or cross-simulator evaluation in MuJoCo (see [holosoma_inference](../holosoma_inference/README.md)).
+
+The `exp:g1-29dof-wbt-stand-fast-sac` preset is the paper-facing entrypoint for the released KungFuAthlete Ground workflow. It switches to the dedicated `robot:g1-29dof-kfa` asset/config surface, which exposes `head_link` while leaving the generic WBT presets unchanged.
 
 ---
 

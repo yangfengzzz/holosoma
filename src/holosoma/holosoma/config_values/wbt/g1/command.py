@@ -60,6 +60,13 @@ motion_config_recovery = replace(
     ),
 )
 
+kfa_motion_file_placeholder = "./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz"
+
+motion_config_stand = replace(
+    motion_config,
+    motion_file=kfa_motion_file_placeholder,
+)
+
 g1_29dof_wbt_command = CommandManagerCfg(
     params={},
     setup_terms={
@@ -106,8 +113,22 @@ g1_29dof_wbt_recovery_command = replace(
     },
 )
 
+g1_29dof_wbt_stand_command = replace(
+    g1_29dof_wbt_command,
+    setup_terms={
+        "motion_command": CommandTermCfg(
+            func="holosoma.managers.command.terms.wbt:MotionCommand",
+            params={
+                "motion_config": motion_config_stand,
+            },
+        )
+    },
+)
+
 __all__ = [
     "g1_29dof_wbt_command",
     "g1_29dof_wbt_recovery_command",
+    "g1_29dof_wbt_stand_command",
     "g1_29dof_wbt_command_w_object",
+    "kfa_motion_file_placeholder",
 ]

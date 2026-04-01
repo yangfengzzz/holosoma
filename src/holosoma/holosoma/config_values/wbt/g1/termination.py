@@ -1,5 +1,7 @@
 """Whole Body Tracking termination presets for the G1 robot."""
 
+from dataclasses import replace
+
 from holosoma.config_types.termination import TerminationManagerCfg, TerminationTermCfg
 
 g1_29dof_wbt_termination = TerminationManagerCfg(
@@ -61,4 +63,10 @@ g1_29dof_wbt_recovery_termination = TerminationManagerCfg(
     }
 )
 
-__all__ = ["g1_29dof_wbt_recovery_termination", "g1_29dof_wbt_termination"]
+g1_29dof_wbt_stand_termination = replace(g1_29dof_wbt_termination)
+
+__all__ = [
+    "g1_29dof_wbt_recovery_termination",
+    "g1_29dof_wbt_stand_termination",
+    "g1_29dof_wbt_termination",
+]

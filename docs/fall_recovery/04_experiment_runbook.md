@@ -41,3 +41,28 @@ python src/holosoma/holosoma/eval_agent.py --checkpoint=<checkpoint>
   increase `max_consecutive_bad_tracking_steps`
 - Stable standing but poor imitation:
   reduce recovery penalties and inspect anchor distribution
+# Experiment Runbook
+
+## Phase A Entry Point
+- Train with the paper-facing surface:
+
+```bash
+source scripts/source_isaacsim_setup.sh
+python src/holosoma/holosoma/train_agent.py \
+  exp:g1-29dof-wbt-stand-fast-sac \
+  logger:wandb \
+  --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz
+```
+
+## What This Preset Changes
+- switches from the generic WBT G1 config to `robot:g1-29dof-kfa`
+- uses the dedicated KFA asset files with `head_link`
+- keeps reward and termination behavior structurally separate from generic WBT so later parity work can land without regressing existing presets
+
+## Validation Notes
+- Config resolution:
+  `exp:g1-29dof-wbt-stand-fast-sac`
+- Smoke test motion override:
+  any local `org_smoothed_mj/*.npz` clip can be passed through the existing Tyro override on `motion_file`
+- Regression safety:
+  `exp:g1-29dof-wbt-fast-sac` continues to use the original `g1_29dof` asset/config path

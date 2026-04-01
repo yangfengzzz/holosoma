@@ -58,5 +58,7 @@ python src/holosoma/holosoma/generate_recovery_dataset.py \
 
 ## Fall-Recovery Notes
 - The recovery training preset is `exp:g1-29dof-wbt-recovery-fast-sac`.
+- The paper-facing stand preset is `exp:g1-29dof-wbt-stand-fast-sac`.
+- The KungFuAthlete-specific robot key is `robot:g1-29dof-kfa`, backed by `g1_29dof_kfa.{xml,urdf}` while keeping `asset.robot_type="g1_29dof"` for bridge compatibility.
 - The recovery docs live under `docs/fall_recovery/`.
 - Mixed reset-source behavior is owned by `MotionCommand`, not by the environment class directly.

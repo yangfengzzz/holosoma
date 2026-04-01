@@ -68,6 +68,8 @@ python src/holosoma/holosoma/train_agent.py \
 
 See the [Training Guide](src/holosoma/README.md) for more examples and configuration options.
 
+For the released KungFuAthlete Ground workflow, use `exp:g1-29dof-wbt-stand-fast-sac` from the training guide. That preset keeps the generic G1 WBT configs untouched and routes the paper-facing workflow through the dedicated KFA robot surface.
+
 ### Quick Demo
 
 We provide scripts to run the complete pipeline: (data downloading and processing for LAFAN), retargeting, data conversion, and whole-body tracking policy training.

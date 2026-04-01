@@ -26,3 +26,40 @@
 - Motion reference and reset source are decoupled.
 - Motion anchors define what the policy should recover back to.
 - Recovery dataset states define where some episodes begin.
+# Dataset And Motion Contract
+
+## Phase A Surface
+- The paper-facing stand preset is `exp:g1-29dof-wbt-stand-fast-sac`.
+- Its default motion path is a placeholder released-style Ground clip path:
+  `./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz`
+- That path is intentionally local and replaceable because the released KungFuAthlete dataset is not vendored into this repository.
+
+## Supported Motion Path Forms
+- Package data path:
+  `holosoma/data/motions/g1_29dof/whole_body_tracking/<clip>.npz`
+- Absolute path:
+  `/data/kungfu/org_smoothed_mj/1317_mj.npz`
+- Repo-relative or cwd-relative path:
+  `./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz`
+
+Holosoma resolves these forms through `resolve_data_file_path()`, so the stand preset can point at a local extracted `org_smoothed_mj` directory without extra code changes.
+
+## KFA Robot Surface
+- The KungFuAthlete-specific robot preset is `robot:g1-29dof-kfa`.
+- It uses dedicated asset files:
+  `src/holosoma/holosoma/data/robots/g1/g1_29dof_kfa.xml`
+  `src/holosoma/holosoma/data/robots/g1/g1_29dof_kfa.urdf`
+- The KFA body layout adds `head_link` immediately after `torso_link` to match the dedicated asset indexing.
+
+## Motion File Expectations
+- Motion `.npz` files still use the repo’s WBT contract:
+  - `fps`
+  - `body_names`
+  - `joint_names`
+  - `joint_pos`
+  - `joint_vel`
+  - `body_pos_w`
+  - `body_quat_w`
+  - `body_lin_vel_w`
+  - `body_ang_vel_w`
+- KungFuAthlete Ground clips are expected to expose the same G1 body and joint names used by the KFA preset, including `head_link` when body-level alignment needs it.

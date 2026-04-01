@@ -1,5 +1,7 @@
 """Whole Body Tracking reward presets for the G1 robot."""
 
+from dataclasses import replace
+
 from holosoma.config_types.reward import RewardManagerCfg, RewardTermCfg
 
 g1_29dof_wbt_reward = RewardManagerCfg(
@@ -160,9 +162,12 @@ g1_29dof_wbt_recovery_fast_sac_reward = RewardManagerCfg(
     }
 )
 
+g1_29dof_wbt_stand_fast_sac_reward = replace(g1_29dof_wbt_fast_sac_reward)
+
 __all__ = [
     "g1_29dof_wbt_fast_sac_reward",
     "g1_29dof_wbt_recovery_fast_sac_reward",
     "g1_29dof_wbt_reward",
+    "g1_29dof_wbt_stand_fast_sac_reward",
     "g1_29dof_wbt_reward_w_object",
 ]
