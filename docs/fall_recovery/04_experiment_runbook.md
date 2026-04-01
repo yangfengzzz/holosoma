@@ -47,6 +47,15 @@ python src/holosoma/holosoma/eval_agent.py --checkpoint=<checkpoint>
 - Train with the paper-facing surface:
 
 ```bash
+python src/holosoma/holosoma/generate_recovery_dataset.py \
+  --exp g1_29dof_wbt_recovery_fast_sac \
+  --output-path ./artifacts/recovery_init/g1_ground_v1.npz \
+  --num-samples 1024 \
+  --friction-range 0.3 1.2 \
+  --processed-augmentation-mode rotation_recombination
+```
+
+```bash
 source scripts/source_isaacsim_setup.sh
 python src/holosoma/holosoma/train_agent.py \
   exp:g1-29dof-wbt-stand-fast-sac \
@@ -58,6 +67,7 @@ python src/holosoma/holosoma/train_agent.py \
 - switches from the generic WBT G1 config to `robot:g1-29dof-kfa`
 - uses the dedicated KFA asset files with `head_link`
 - keeps reward and termination behavior structurally separate from generic WBT so later parity work can land without regressing existing presets
+- recovery training consumes a processed recovery-init dataset, while the generator also emits a matching raw `.raw.npz` GRSI dataset beside it by default
 
 ## Validation Notes
 - Config resolution:

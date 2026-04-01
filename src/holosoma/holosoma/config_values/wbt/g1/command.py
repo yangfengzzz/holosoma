@@ -50,7 +50,8 @@ motion_config_recovery = replace(
         enabled=False,
         dataset_path="./artifacts/recovery_init/g1_ground_v1.npz",
         sample_probability=0.5,
-        yaw_augmentation=True,
+        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+        dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT,
     ),
     low_kinetic_sampling=MotionConfig.LowKineticSamplingConfig(
         anchor_window_size=15,

@@ -161,6 +161,15 @@ class MotionConfig:
 
     @dataclass(frozen=True)
     class RecoveryInitDatasetConfig:
+        class AugmentationMode(str, Enum):
+            NONE = "none"
+            YAW = "yaw"
+            ROTATION_RECOMBINATION = "rotation_recombination"
+
+        class DatasetKind(str, Enum):
+            RAW_GRSI = "raw_grsi"
+            RECOVERY_INIT = "recovery_init"
+
         enabled: bool = False
         """Whether recovery-state resets are enabled."""
 
@@ -170,8 +179,11 @@ class MotionConfig:
         sample_probability: float = 0.5
         """Probability of using a sampled recovery state instead of motion-state reset."""
 
-        yaw_augmentation: bool = True
-        """Whether to randomize the global yaw of sampled recovery states at reset time."""
+        augmentation_mode: AugmentationMode = AugmentationMode.ROTATION_RECOMBINATION
+        """How sampled recovery states should be augmented before reset."""
+
+        dataset_kind: DatasetKind = DatasetKind.RECOVERY_INIT
+        """Expected kind of recovery dataset consumed at training time."""
 
     recovery_init_dataset: RecoveryInitDatasetConfig = field(default_factory=RecoveryInitDatasetConfig)
     """Optional dataset of gravity-settled recovery initial states."""

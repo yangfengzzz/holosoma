@@ -546,7 +546,7 @@ class MotionCommand(CommandTermBase):
             recovery_env_ids = env_ids[recovery_mask]
             recovery_batch = self.recovery_init_dataset.sample(
                 recovery_env_ids.numel(),
-                yaw_augmentation=self.motion_cfg.recovery_init_dataset.yaw_augmentation,
+                augmentation_mode=self.motion_cfg.recovery_init_dataset.augmentation_mode,
             )
             target_dof_pos[recovery_mask] = recovery_batch.dof_pos
             target_dof_vel[recovery_mask] = recovery_batch.dof_vel

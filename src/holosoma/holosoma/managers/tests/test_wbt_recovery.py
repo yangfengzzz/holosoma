@@ -11,7 +11,8 @@ from holosoma.config_types.termination import TerminationTermCfg
 from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler
 from holosoma.managers.reward.terms import wbt as wbt_reward_terms
 from holosoma.managers.termination.terms import wbt as wbt_termination_terms
-from holosoma.utils.recovery_init_dataset import RecoveryInitDataset
+from holosoma.config_types.command import MotionConfig
+from holosoma.utils.recovery_init_dataset import RecoveryDatasetMetadata, RecoveryInitDataset
 
 
 def test_low_kinetic_anchor_sampler_extracts_and_updates_weights():
@@ -45,22 +46,70 @@ def test_low_kinetic_anchor_sampler_extracts_and_updates_weights():
     assert sampler.anchor_weights.tolist() == pytest.approx([1.0, 1.5, 1.5, 1.5])
 
 
-def test_recovery_dataset_sampling_and_yaw_augmentation(tmp_path):
+def test_recovery_dataset_sampling_and_augmentation_modes(tmp_path):
     dataset_path = tmp_path / "recovery_init.npz"
     np.savez_compressed(
         dataset_path,
-        root_states=np.array([[0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]], dtype=np.float32),
-        dof_pos=np.zeros((1, 4), dtype=np.float32),
-        dof_vel=np.zeros((1, 4), dtype=np.float32),
+        root_states=np.array(
+            [
+                [0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5],
+                [0.0, 0.0, 0.6, 0.1, 0.0, 0.0, 0.995, 0.0, 1.0, 0.0, 0.2, 0.0, 0.0],
+            ],
+            dtype=np.float32,
+        ),
+        dof_pos=np.zeros((2, 4), dtype=np.float32),
+        dof_vel=np.zeros((2, 4), dtype=np.float32),
+        metadata_json=np.array(
+            RecoveryDatasetMetadata(
+                dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT,
+                augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+                preset="g1_29dof_wbt_recovery_fast_sac",
+                robot_type="g1_29dof",
+                friction_range=(0.3, 1.2),
+                settle_steps=180,
+                seed=7,
+                batch_size=2,
+                num_samples=2,
+            ).to_json()
+        ),
     )
 
     torch.manual_seed(0)
     dataset = RecoveryInitDataset(str(dataset_path), "cpu")
-    batch = dataset.sample(1, yaw_augmentation=True)
+    no_aug = dataset.sample(1, augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.NONE)
+    yaw_aug = dataset.sample(1, augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.YAW)
+    recombined = dataset.sample(
+        2,
+        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+    )
 
-    assert batch.root_states.shape == (1, 13)
-    assert batch.dof_pos.shape == (1, 4)
-    assert torch.isclose(torch.norm(batch.root_states[0, 3:7]), torch.tensor(1.0), atol=1e-5)
+    assert dataset.metadata.dataset_kind == MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT
+    assert no_aug.root_states.shape == (1, 13)
+    assert yaw_aug.dof_pos.shape == (1, 4)
+    assert torch.isclose(torch.norm(yaw_aug.root_states[0, 3:7]), torch.tensor(1.0), atol=1e-5)
+    assert torch.isclose(torch.norm(recombined.root_states[0, 3:7]), torch.tensor(1.0), atol=1e-5)
+    assert recombined.root_states.shape == (2, 13)
+    assert recombined.dof_vel.shape == (2, 4)
+
+
+def test_recovery_dataset_rotation_recombination_preserves_quaternion_norm(tmp_path):
+    dataset_path = tmp_path / "raw_recovery_init.npz"
+    np.savez_compressed(
+        dataset_path,
+        root_states=np.array(
+            [
+                [0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0, 0.1, 0.2, 0.3],
+                [0.0, 0.0, 0.6, 0.2, 0.1, 0.0, 0.97, 0.0, 0.1, 0.0, 0.4, 0.5, 0.6],
+            ],
+            dtype=np.float32,
+        ),
+        dof_pos=np.zeros((2, 3), dtype=np.float32),
+        dof_vel=np.zeros((2, 3), dtype=np.float32),
+    )
+
+    dataset = RecoveryInitDataset(str(dataset_path), "cpu")
+    batch = dataset.sample(2, augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION)
+    assert torch.allclose(torch.norm(batch.root_states[:, 3:7], dim=1), torch.ones(2), atol=1e-4)
 
 
 def test_recovery_action_rate_penalty_is_gated_by_recovery_state():

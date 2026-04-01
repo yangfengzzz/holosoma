@@ -44,6 +44,16 @@
 
 Holosoma resolves these forms through `resolve_data_file_path()`, so the stand preset can point at a local extracted `org_smoothed_mj` directory without extra code changes.
 
+## Recovery Dataset Contract
+- Raw GRSI dataset:
+  direct gravity-settled fallen states saved as `.raw.npz`
+- Training-ready recovery dataset:
+  NPZ with the same `root_states`, `dof_pos`, and `dof_vel` payload plus `metadata_json`
+- Required metadata captures:
+  dataset kind, default augmentation mode, preset, robot type, friction range, settle steps, seed, batch size, and sample count
+- Supported augmentation modes:
+  `none`, `yaw`, `rotation_recombination`
+
 ## KFA Robot Surface
 - The KungFuAthlete-specific robot preset is `robot:g1-29dof-kfa`.
 - It uses dedicated asset files:
