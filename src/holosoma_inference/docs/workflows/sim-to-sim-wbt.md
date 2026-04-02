@@ -46,6 +46,17 @@ python3 src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29d
     --task.interface lo
 ```
 
+For exported KungFuAthlete parity checkpoints, replace `--task.model-path` with the ONNX produced by `eval_agent.py`, for example:
+
+```bash
+python3 src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29dof-wbt \
+    --task.model-path logs/<project>/<run>/exported/model_XXXX.onnx \
+    --task.no-use-joystick \
+    --task.use-sim-time \
+    --task.rl-rate 50 \
+    --task.interface lo
+```
+
 ### 3. Initialize Stiff Control Mode
 
 In policy terminal, press `Enter` when prompted. The robot enters stiff control mode and holds its initial pose.

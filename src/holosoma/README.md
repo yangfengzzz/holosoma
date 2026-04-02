@@ -100,6 +100,15 @@ python src/holosoma/holosoma/train_agent.py \
     logger:wandb \
     --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz
 
+# Recovery parity preset with GRSI resets
+source scripts/source_isaacsim_setup.sh
+python src/holosoma/holosoma/train_agent.py \
+    exp:g1-29dof-wbt-recovery-fast-sac \
+    logger:wandb \
+    --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz \
+    --command.setup_terms.motion_command.params.motion_config.recovery_init_dataset.enabled=True \
+    --command.setup_terms.motion_command.params.motion_config.recovery_init_dataset.dataset_path=./artifacts/recovery_init/g1_ground_v1.npz
+
 # G1 with PPO
 source scripts/source_isaacsim_setup.sh
 python src/holosoma/holosoma/train_agent.py \
@@ -124,6 +133,11 @@ python src/holosoma/holosoma/replay.py \
 Once checkpoints are saved, you can evaluate policies using [In-Training Evaluation](#in-training-evaluation) (same simulator as training) or cross-simulator evaluation in MuJoCo (see [holosoma_inference](../holosoma_inference/README.md)).
 
 The `exp:g1-29dof-wbt-stand-fast-sac` preset is the paper-facing entrypoint for the released KungFuAthlete Ground workflow. It switches to the dedicated `robot:g1-29dof-kfa` asset/config surface, which exposes `head_link` while leaving the generic WBT presets unchanged.
+
+Paper-facing recovery ablations are also available:
+- `exp:g1-29dof-wbt-recovery-only-fast-sac`
+- `exp:g1-29dof-wbt-recovery-slip3-fast-sac`
+- `exp:g1-29dof-wbt-recovery-slip5-fast-sac`
 
 ---
 
@@ -153,6 +167,14 @@ This evaluation mode:
   - `w`/`a`/`s`/`d`: linear velocity commands
   - `q`/`e`: angular velocity commands
   - `z`: zero velocity command
+
+For released KungFuAthlete Ground parity runs, use clip `1307` as the default hard regression clip:
+
+```bash
+python src/holosoma/holosoma/eval_agent.py \
+    --checkpoint=<CHECKPOINT_PATH> \
+    --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1307_mj.npz
+```
 
 ### Cross-Simulator Evaluation (MuJoCo)
 

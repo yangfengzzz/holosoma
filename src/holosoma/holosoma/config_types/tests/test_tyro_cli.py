@@ -1,6 +1,12 @@
 import tyro
 
 from holosoma.config_types.experiment import ExperimentConfig
+from holosoma.config_values.wbt.g1.command import (
+    KFA_OPTIONAL_REGRESSION_CLIP_IDS,
+    KFA_PRIMARY_REGRESSION_CLIP_ID,
+    KFA_TRAINING_EXAMPLE_CLIP_ID,
+    get_kfa_released_motion_path,
+)
 from holosoma.config_values.experiment import AnnotatedExperimentConfig, DEFAULTS as EXPERIMENT_DEFAULTS
 from holosoma.utils.tyro_utils import TYRO_CONIFG
 
@@ -36,3 +42,39 @@ def test_recovery_preset_uses_explicit_grsi_augmentation_mode():
     recovery_cfg = config.command.setup_terms["motion_command"].params["motion_config"].recovery_init_dataset
     assert recovery_cfg.augmentation_mode == "rotation_recombination"
     assert recovery_cfg.dataset_kind == "recovery_init"
+
+
+def test_kfa_released_clip_helpers():
+    assert get_kfa_released_motion_path(KFA_TRAINING_EXAMPLE_CLIP_ID).endswith("/1317_mj.npz")
+    assert get_kfa_released_motion_path(KFA_PRIMARY_REGRESSION_CLIP_ID).endswith("/1307_mj.npz")
+    assert KFA_OPTIONAL_REGRESSION_CLIP_IDS == ("969", "0203")
+
+
+def test_recovery_ablation_presets_resolve_with_expected_slip_weights():
+    recovery_only = tyro.cli(
+        AnnotatedExperimentConfig,
+        args=("exp:g1-29dof-wbt-recovery-only-fast-sac",),
+        config=TYRO_CONIFG,
+    )
+    slip3 = tyro.cli(
+        AnnotatedExperimentConfig,
+        args=("exp:g1-29dof-wbt-recovery-slip3-fast-sac",),
+        config=TYRO_CONIFG,
+    )
+    slip5 = tyro.cli(
+        AnnotatedExperimentConfig,
+        args=("exp:g1-29dof-wbt-recovery-slip5-fast-sac",),
+        config=TYRO_CONIFG,
+    )
+
+    assert recovery_only.training.name == "g1_29dof_wbt_recovery_only_fast_sac_manager"
+    assert "feet_slip_penalty" not in recovery_only.reward.terms
+
+    assert slip3.training.name == "g1_29dof_wbt_recovery_slip3_fast_sac_manager"
+    assert slip3.reward.terms["feet_slip_penalty"].weight == -3.0
+
+    assert slip5.training.name == "g1_29dof_wbt_recovery_slip5_fast_sac_manager"
+    assert slip5.reward.terms["feet_slip_penalty"].weight == -5.0
+
+    assert slip3.command.setup_terms["motion_command"].params["motion_config"].motion_file.endswith("/1317_mj.npz")
+    assert slip5.termination.terms["bad_tracking"].params["shoulder_height_threshold"] == 1.0

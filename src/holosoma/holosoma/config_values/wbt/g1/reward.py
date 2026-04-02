@@ -4,6 +4,18 @@ from dataclasses import replace
 
 from holosoma.config_types.reward import RewardManagerCfg, RewardTermCfg
 
+
+def _replace_term_weight(cfg: RewardManagerCfg, term_name: str, weight: float) -> RewardManagerCfg:
+    terms = dict(cfg.terms)
+    terms[term_name] = replace(terms[term_name], weight=weight)
+    return RewardManagerCfg(terms=terms)
+
+
+def _drop_term(cfg: RewardManagerCfg, term_name: str) -> RewardManagerCfg:
+    terms = dict(cfg.terms)
+    terms.pop(term_name, None)
+    return RewardManagerCfg(terms=terms)
+
 g1_29dof_wbt_reward = RewardManagerCfg(
     terms={
         # Motion tracking rewards - global reference frame
@@ -250,9 +262,29 @@ g1_29dof_wbt_recovery_fast_sac_reward = RewardManagerCfg(
     }
 )
 
+g1_29dof_wbt_recovery_only_fast_sac_reward = _drop_term(
+    g1_29dof_wbt_recovery_fast_sac_reward,
+    "feet_slip_penalty",
+)
+
+g1_29dof_wbt_recovery_slip3_fast_sac_reward = _replace_term_weight(
+    g1_29dof_wbt_recovery_fast_sac_reward,
+    "feet_slip_penalty",
+    -3.0,
+)
+
+g1_29dof_wbt_recovery_slip5_fast_sac_reward = _replace_term_weight(
+    g1_29dof_wbt_recovery_fast_sac_reward,
+    "feet_slip_penalty",
+    -5.0,
+)
+
 __all__ = [
     "g1_29dof_wbt_fast_sac_reward",
     "g1_29dof_wbt_recovery_fast_sac_reward",
+    "g1_29dof_wbt_recovery_only_fast_sac_reward",
+    "g1_29dof_wbt_recovery_slip3_fast_sac_reward",
+    "g1_29dof_wbt_recovery_slip5_fast_sac_reward",
     "g1_29dof_wbt_reward",
     "g1_29dof_wbt_stand_fast_sac_reward",
     "g1_29dof_wbt_reward_w_object",

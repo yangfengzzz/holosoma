@@ -120,3 +120,11 @@ def test_run_policy_with_trained_checkpoint(workflow_name: str, config_name: str
     """
     checkpoint_path = run_mini_training(workflow_name)
     assert_run_policy_with_hsinference(config_name, checkpoint_path)
+
+
+@pytest.mark.requires_inference
+def test_run_policy_with_packaged_wbt_checkpoint():
+    model_path = (
+        f"{REPO_ROOT}/src/holosoma_inference/holosoma_inference/models/wbt/fastsac_g1_29dof_dancing.onnx"
+    )
+    assert_run_policy_with_hsinference("g1-29dof-wbt", model_path)

@@ -4,6 +4,18 @@ from dataclasses import replace
 
 from holosoma.config_types.command import CommandManagerCfg, CommandTermCfg, MotionConfig, NoiseToInitialPoseConfig
 
+KFA_RELEASED_MOTION_ROOT = "./datasets/KungFuAthleteBot/org_smoothed_mj"
+KFA_TRAINING_EXAMPLE_CLIP_ID = "1317"
+KFA_PRIMARY_REGRESSION_CLIP_ID = "1307"
+KFA_OPTIONAL_REGRESSION_CLIP_IDS = ("969", "0203")
+
+
+def get_kfa_released_motion_path(clip_id: str) -> str:
+    return f"{KFA_RELEASED_MOTION_ROOT}/{clip_id}_mj.npz"
+
+
+kfa_motion_file_placeholder = get_kfa_released_motion_path(KFA_TRAINING_EXAMPLE_CLIP_ID)
+
 init_pose_config = NoiseToInitialPoseConfig(
     overall_noise_scale=1.0,
     dof_pos=0.1,
@@ -44,6 +56,7 @@ motion_config_w_object = replace(
 
 motion_config_recovery = replace(
     motion_config,
+    motion_file=kfa_motion_file_placeholder,
     sampling_strategy=MotionConfig.MotionSamplingStrategy.LOW_KINETIC,
     recovery_shoulder_height_threshold=1.0,
     recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
@@ -61,8 +74,6 @@ motion_config_recovery = replace(
         failure_weight=1.0,
     ),
 )
-
-kfa_motion_file_placeholder = "./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz"
 
 motion_config_stand = replace(
     motion_config,
@@ -129,9 +140,14 @@ g1_29dof_wbt_stand_command = replace(
 )
 
 __all__ = [
+    "KFA_OPTIONAL_REGRESSION_CLIP_IDS",
+    "KFA_PRIMARY_REGRESSION_CLIP_ID",
+    "KFA_RELEASED_MOTION_ROOT",
+    "KFA_TRAINING_EXAMPLE_CLIP_ID",
     "g1_29dof_wbt_command",
     "g1_29dof_wbt_recovery_command",
     "g1_29dof_wbt_stand_command",
     "g1_29dof_wbt_command_w_object",
+    "get_kfa_released_motion_path",
     "kfa_motion_file_placeholder",
 ]

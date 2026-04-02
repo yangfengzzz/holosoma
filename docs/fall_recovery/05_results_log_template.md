@@ -5,6 +5,7 @@
 - Commit:
 - Preset:
 - Seed:
+- Ablation family:
 - Motion clip or subset:
 
 ## Dataset
@@ -12,6 +13,7 @@
 - Num samples:
 - Generator settle steps:
 - Recovery sample probability:
+- Recovery dataset kind:
 
 ## Training Outcome
 - Best checkpoint:
@@ -24,15 +26,18 @@
 - Tracking orientation:
 - Body position:
 - Body orientation:
+- Feet slip penalty:
 - Recovery shoulder penalty:
 - Recovery XY drift penalty:
 
 ## Evaluation
-- IsaacSim qualitative result:
+- IsaacSim same-sim result:
 - MuJoCo sim-to-sim result:
-- Videos:
+- ONNX export path:
+- Video path:
 
 ## Notes
 - Main failure mode:
 - Best config change:
+- Regression clip set checked:
 - Next ablation:

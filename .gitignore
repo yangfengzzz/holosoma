@@ -29,3 +29,7 @@ src/holosoma/holosoma/data/robots/converted_rank*/
 __pycache__
 
 src/holosoma_retargeting/holosoma_retargeting/data_utils/ubisoft-laforge-animation-dataset/
+KungFuAthleteBot/collection_g129dof
+KungFuAthleteBot/collection_gvhmr
+KungFuAthleteBot/kungfu_athlete_for_g1_29dof
+KungFuAthleteBot/kungfu_gvhmr_video_demo

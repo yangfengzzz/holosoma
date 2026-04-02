@@ -198,9 +198,46 @@ g1_29dof_wbt_recovery_fast_sac = replace(
         project="WholeBodyTrackingRecovery",
         name="g1_29dof_wbt_recovery_fast_sac_manager",
     ),
+    robot=replace(
+        robot.g1_29dof_kfa,
+        control=replace(
+            robot.g1_29dof_kfa.control,
+            action_scale=0.25,
+            action_scales_by_effort_limit_over_p_gain=True,
+        ),
+        asset=replace(robot.g1_29dof_kfa.asset, enable_self_collisions=True),
+        init_state=replace(robot.g1_29dof_kfa.init_state, pos=[0.0, 0.0, 0.76]),
+    ),
     command=command.g1_29dof_wbt_recovery_command,
     termination=termination.g1_29dof_wbt_recovery_termination,
     reward=reward.g1_29dof_wbt_recovery_fast_sac_reward,
+)
+
+g1_29dof_wbt_recovery_only_fast_sac = replace(
+    g1_29dof_wbt_recovery_fast_sac,
+    training=replace(
+        g1_29dof_wbt_recovery_fast_sac.training,
+        name="g1_29dof_wbt_recovery_only_fast_sac_manager",
+    ),
+    reward=reward.g1_29dof_wbt_recovery_only_fast_sac_reward,
+)
+
+g1_29dof_wbt_recovery_slip3_fast_sac = replace(
+    g1_29dof_wbt_recovery_fast_sac,
+    training=replace(
+        g1_29dof_wbt_recovery_fast_sac.training,
+        name="g1_29dof_wbt_recovery_slip3_fast_sac_manager",
+    ),
+    reward=reward.g1_29dof_wbt_recovery_slip3_fast_sac_reward,
+)
+
+g1_29dof_wbt_recovery_slip5_fast_sac = replace(
+    g1_29dof_wbt_recovery_fast_sac,
+    training=replace(
+        g1_29dof_wbt_recovery_fast_sac.training,
+        name="g1_29dof_wbt_recovery_slip5_fast_sac_manager",
+    ),
+    reward=reward.g1_29dof_wbt_recovery_slip5_fast_sac_reward,
 )
 
 g1_29dof_wbt_stand_fast_sac = replace(
@@ -228,6 +265,9 @@ __all__ = [
     "g1_29dof_wbt",
     "g1_29dof_wbt_fast_sac",
     "g1_29dof_wbt_recovery_fast_sac",
+    "g1_29dof_wbt_recovery_only_fast_sac",
+    "g1_29dof_wbt_recovery_slip3_fast_sac",
+    "g1_29dof_wbt_recovery_slip5_fast_sac",
     "g1_29dof_wbt_stand_fast_sac",
     "g1_29dof_wbt_fast_sac_w_object",
     "g1_29dof_wbt_w_object",
