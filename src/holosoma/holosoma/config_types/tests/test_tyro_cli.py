@@ -17,13 +17,18 @@ def test_experiment_config():
 
 def test_kfa_stand_experiment_cli_surface():
     config = tyro.cli(AnnotatedExperimentConfig, args=("exp:g1-29dof-wbt-stand-fast-sac",), config=TYRO_CONIFG)
+    motion_cfg = config.command.setup_terms["motion_command"].params["motion_config"]
 
     assert config.training.name == "g1_29dof_wbt_stand_fast_sac_manager"
     assert config.robot.asset.xml_file.endswith("g1/g1_29dof_kfa.xml")
     assert config.robot.asset.urdf_file.endswith("g1/g1_29dof_kfa.urdf")
     assert config.robot.asset.robot_type == "g1_29dof"
     assert "head_link" in config.robot.body_names
-    assert config.command.setup_terms["motion_command"].params["motion_config"].recovery_shoulder_height_threshold == 1.0
+    assert motion_cfg.recovery_shoulder_height_threshold == 1.0
+    assert motion_cfg.start_at_timestep_zero_prob == 0.0
+    assert motion_cfg.freeze_at_timestep_zero_prob == 0.0
+    assert motion_cfg.enable_default_pose_prepend is False
+    assert motion_cfg.enable_default_pose_append is False
     assert config.reward.terms["motion_relative_body_position_error_exp"].weight == 4.0
     assert config.reward.terms["motion_relative_body_position_error_exp"].tags == ["r_mtr", "tracking"]
     assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
@@ -43,8 +48,13 @@ def test_existing_wbt_fast_sac_surface_is_unchanged():
 def test_recovery_preset_uses_explicit_grsi_augmentation_mode():
     config = tyro.cli(AnnotatedExperimentConfig, args=("exp:g1-29dof-wbt-recovery-fast-sac",), config=TYRO_CONIFG)
     recovery_cfg = config.command.setup_terms["motion_command"].params["motion_config"].recovery_init_dataset
+    motion_cfg = config.command.setup_terms["motion_command"].params["motion_config"]
     assert recovery_cfg.augmentation_mode == "rotation_recombination"
     assert recovery_cfg.dataset_kind == "recovery_init"
+    assert motion_cfg.start_at_timestep_zero_prob == 0.0
+    assert motion_cfg.freeze_at_timestep_zero_prob == 0.0
+    assert motion_cfg.enable_default_pose_prepend is False
+    assert motion_cfg.enable_default_pose_append is False
     assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
     assert "undesired_contacts" in config.reward.terms
 

@@ -376,6 +376,7 @@ class MotionCommand(CommandTermBase):
             robot_joint_names,
             device=self.device,
         )
+        original_motion_joint_vel = self.motion.joint_vel.clone()
 
         # Store body and joint indexes for interpolation
         self._body_indexes_in_motion = self.motion._body_indexes
@@ -420,7 +421,7 @@ class MotionCommand(CommandTermBase):
         if sampling_strategy == MotionConfig.MotionSamplingStrategy.LOW_KINETIC:
             sampler_cfg = self.motion_cfg.low_kinetic_sampling
             self.low_kinetic_anchor_sampler = LowKineticAnchorSampler(
-                self.motion.joint_vel,
+                original_motion_joint_vel,
                 self.device,
                 window_size=sampler_cfg.anchor_window_size,
                 min_anchor_spacing=sampler_cfg.min_anchor_spacing,

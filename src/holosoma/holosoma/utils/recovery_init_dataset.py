@@ -122,6 +122,10 @@ class RecoveryInitDataset:
         dof_vel = self.dof_vel[sample_ids].clone()
 
         mode = augmentation_mode or self.metadata.augmentation_mode
+        # Processed recovery_init datasets already store materialized augmented
+        # root states, so sampling them should not apply augmentation again.
+        if self.metadata.dataset_kind == MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT:
+            mode = MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.NONE
         root_states = apply_recovery_root_state_augmentation(
             root_states,
             augmentation_mode=mode,

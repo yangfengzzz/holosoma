@@ -7,8 +7,9 @@ import numpy as np
 import pytest
 import torch
 
+from holosoma.config_types.command import CommandTermCfg
 from holosoma.config_types.termination import TerminationTermCfg
-from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler
+from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler, MotionCommand
 from holosoma.managers.reward.terms import wbt as wbt_reward_terms
 from holosoma.managers.termination.terms import wbt as wbt_termination_terms
 from holosoma.config_types.command import MotionConfig
@@ -96,6 +97,43 @@ def test_recovery_dataset_sampling_and_augmentation_modes(tmp_path):
     assert recombined.dof_vel.shape == (2, 4)
 
 
+def test_processed_recovery_dataset_is_not_augmented_again_on_sample(tmp_path):
+    dataset_path = tmp_path / "processed_recovery_init.npz"
+    stored_root_states = np.array(
+        [
+            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+        ],
+        dtype=np.float32,
+    )
+    np.savez_compressed(
+        dataset_path,
+        root_states=stored_root_states,
+        dof_pos=np.zeros((1, 4), dtype=np.float32),
+        dof_vel=np.zeros((1, 4), dtype=np.float32),
+        metadata_json=np.array(
+            RecoveryDatasetMetadata(
+                dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT,
+                augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+                preset="g1_29dof_wbt_recovery_fast_sac",
+                robot_type="g1_29dof",
+                friction_range=(0.3, 1.2),
+                settle_steps=180,
+                seed=7,
+                batch_size=1,
+                num_samples=1,
+            ).to_json()
+        ),
+    )
+
+    dataset = RecoveryInitDataset(str(dataset_path), "cpu")
+    sampled = dataset.sample(
+        1,
+        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+    )
+
+    assert torch.allclose(sampled.root_states, torch.tensor(stored_root_states))
+
+
 def test_recovery_dataset_rotation_recombination_preserves_quaternion_norm(tmp_path):
     dataset_path = tmp_path / "raw_recovery_init.npz"
     np.savez_compressed(
@@ -109,6 +147,19 @@ def test_recovery_dataset_rotation_recombination_preserves_quaternion_norm(tmp_p
         ),
         dof_pos=np.zeros((2, 3), dtype=np.float32),
         dof_vel=np.zeros((2, 3), dtype=np.float32),
+        metadata_json=np.array(
+            RecoveryDatasetMetadata(
+                dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RAW_GRSI,
+                augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.NONE,
+                preset="g1_29dof_wbt_recovery_fast_sac",
+                robot_type="g1_29dof",
+                friction_range=(0.3, 1.2),
+                settle_steps=180,
+                seed=7,
+                batch_size=2,
+                num_samples=2,
+            ).to_json()
+        ),
     )
 
     dataset = RecoveryInitDataset(str(dataset_path), "cpu")
@@ -287,3 +338,100 @@ def test_recovery_aware_bad_tracking_hysteresis():
 
     assert first.tolist() == [False, True]
     assert second.tolist() == [True, True]
+
+
+def test_bad_tracking_orientation_uses_radian_quaternion_error():
+    motion_command = SimpleNamespace(
+        motion_cfg=SimpleNamespace(body_names_to_track=["left_ankle_roll_link"]),
+        ref_quat_w=torch.tensor([[0.0, 0.0, 0.0, 1.0]], dtype=torch.float32),
+        robot_ref_quat_w=torch.tensor([[0.0, 0.0, 0.5, 0.8660254]], dtype=torch.float32),
+        ref_pos_w=torch.zeros((1, 3), dtype=torch.float32),
+        robot_ref_pos_w=torch.zeros((1, 3), dtype=torch.float32),
+        body_pos_relative_w=torch.zeros((1, 1, 3), dtype=torch.float32),
+        robot_body_pos_w=torch.zeros((1, 1, 3), dtype=torch.float32),
+        motion=SimpleNamespace(has_object=False),
+    )
+    env = SimpleNamespace(
+        num_envs=1,
+        device="cpu",
+        command_manager=SimpleNamespace(get_state=lambda name: motion_command),
+    )
+    cfg = TerminationTermCfg(
+        func="unused",
+        params={
+            "bad_ref_pos_threshold": 0.5,
+            "bad_ref_ori_threshold": 0.8,
+            "bad_motion_body_pos_threshold": 0.25,
+            "body_names_to_track": ["left_ankle_roll_link"],
+            "bad_motion_body_pos_body_names": ["left_ankle_roll_link"],
+            "bad_object_pos_threshold": 0.25,
+            "bad_object_ori_threshold": 0.8,
+        },
+    )
+    term = wbt_termination_terms.BadTrackingZOnly(cfg, env)
+
+    assert term.bad_ref_ori(motion_command).tolist() == [True]
+
+
+def test_motion_command_low_kinetic_sampler_uses_pre_transition_motion():
+    original_joint_vel = torch.tensor(
+        [
+            [0.0],
+            [2.0],
+            [0.2],
+            [3.0],
+        ],
+        dtype=torch.float32,
+    )
+
+    class FakeMotionLoader:
+        def __init__(self, *args, **kwargs):
+            self._joint_vel = original_joint_vel.clone()
+            self._joint_pos = torch.zeros((4, 1), dtype=torch.float32)
+            self._body_indexes = torch.arange(3, dtype=torch.long)
+            self._joint_indexes = torch.arange(1, dtype=torch.long)
+            self.time_step_total = 4
+            self.has_object = False
+
+        @property
+        def joint_vel(self):
+            return self._joint_vel
+
+    def mutate_motion_with_transition(self, prepend: bool) -> None:
+        extra = torch.full((2, 1), 0.01 if prepend else 0.02, dtype=torch.float32)
+        self.motion._joint_vel = torch.cat([extra, self.motion._joint_vel], dim=0) if prepend else torch.cat(
+            [self.motion._joint_vel, extra], dim=0
+        )
+        self.motion.time_step_total = self.motion._joint_vel.shape[0]
+
+    motion_cfg = MotionConfig(
+        motion_file="unused.npz",
+        body_name_ref=["torso_link"],
+        body_names_to_track=["left_shoulder_roll_link", "right_shoulder_roll_link"],
+        sampling_strategy=MotionConfig.MotionSamplingStrategy.LOW_KINETIC,
+        enable_default_pose_prepend=True,
+        enable_default_pose_append=True,
+    )
+    env = SimpleNamespace(
+        num_envs=1,
+        device="cpu",
+        dt=0.02,
+        viewer=False,
+        simulator=SimpleNamespace(
+            _body_list=["torso_link", "left_shoulder_roll_link", "right_shoulder_roll_link"],
+            dof_names=["joint0"],
+        ),
+    )
+    cfg = CommandTermCfg(func="unused", params={"motion_config": motion_cfg})
+
+    with patch("holosoma.managers.command.terms.wbt.MotionLoader", FakeMotionLoader), patch.object(
+        MotionCommand,
+        "_maybe_add_default_pose_transition",
+        mutate_motion_with_transition,
+    ):
+        term = MotionCommand(cfg, env)
+        term.setup()
+
+    assert term.motion.time_step_total == 8
+    assert term.low_kinetic_anchor_sampler is not None
+    assert term.low_kinetic_anchor_sampler.anchor_timesteps.max().item() < original_joint_vel.shape[0]

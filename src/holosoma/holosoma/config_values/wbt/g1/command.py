@@ -56,6 +56,10 @@ motion_config_recovery = replace(
     motion_config,
     motion_file=kfa_motion_file_placeholder,
     sampling_strategy=MotionConfig.MotionSamplingStrategy.LOW_KINETIC,
+    start_at_timestep_zero_prob=0.0,
+    freeze_at_timestep_zero_prob=0.0,
+    enable_default_pose_prepend=False,
+    enable_default_pose_append=False,
     recovery_shoulder_height_threshold=1.0,
     recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
         enabled=False,
@@ -76,6 +80,10 @@ motion_config_recovery = replace(
 motion_config_stand = replace(
     motion_config,
     motion_file=kfa_motion_file_placeholder,
+    start_at_timestep_zero_prob=0.0,
+    freeze_at_timestep_zero_prob=0.0,
+    enable_default_pose_prepend=False,
+    enable_default_pose_append=False,
     recovery_shoulder_height_threshold=1.0,
 )
 

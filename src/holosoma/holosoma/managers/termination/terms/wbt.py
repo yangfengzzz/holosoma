@@ -7,12 +7,8 @@ from typing import Any, List
 from holosoma.config_types.termination import TerminationTermCfg
 from holosoma.envs.wbt.wbt_manager import WholeBodyTrackingManager
 from holosoma.managers.command.terms.wbt import MotionCommand
-from holosoma.managers.observation.terms.wbt import gravity_vector
 from holosoma.managers.termination.base import TerminationTermBase
-from holosoma.utils.rotations import (
-    quat_error_magnitude,
-    quat_rotate_inverse,
-)
+from holosoma.utils.rotations import quat_error_magnitude
 from holosoma.utils.safe_torch_import import torch
 
 
@@ -82,16 +78,8 @@ class BadTracking(TerminationTermBase):
         return torch.norm(motion_command.ref_pos_w - motion_command.robot_ref_pos_w, dim=1) > self.bad_ref_pos_threshold
 
     def bad_ref_ori(self, motion_command: MotionCommand) -> torch.Tensor:
-        """Terminate if the reference orientation is too far from the robot's orientation."""
-        motion_projected_gravity_b = quat_rotate_inverse(
-            motion_command.ref_quat_w, gravity_vector(self.env), w_last=True
-        )
-        robot_projected_gravity_b = quat_rotate_inverse(
-            motion_command.robot_ref_quat_w, gravity_vector(self.env), w_last=True
-        )
-        return (
-            torch.abs(motion_projected_gravity_b[:, 2] - robot_projected_gravity_b[:, 2]) > self.bad_ref_ori_threshold
-        )
+        """Terminate if the reference orientation error exceeds the configured radian threshold."""
+        return quat_error_magnitude(motion_command.ref_quat_w, motion_command.robot_ref_quat_w) > self.bad_ref_ori_threshold
 
     def bad_motion_body_pos(self, motion_command: MotionCommand) -> torch.Tensor:
         """Terminate if the motion body position is too far from the robot's body position."""
