@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import patch
+from unittest.mock import PropertyMock
 
 import numpy as np
 import pytest
@@ -12,7 +13,7 @@ from holosoma.config_types.termination import TerminationTermCfg
 from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler, MotionCommand
 from holosoma.managers.reward.terms import wbt as wbt_reward_terms
 from holosoma.managers.termination.terms import wbt as wbt_termination_terms
-from holosoma.config_types.command import MotionConfig
+from holosoma.config_types.command import MotionConfig, NoiseToInitialPoseConfig
 from holosoma.utils.recovery_init_dataset import (
     RecoveryDatasetMetadata,
     RecoveryInitDataset,
@@ -491,3 +492,101 @@ def test_motion_command_low_kinetic_sampler_uses_pre_transition_motion():
     assert term.motion.time_step_total == 8
     assert term.low_kinetic_anchor_sampler is not None
     assert term.low_kinetic_anchor_sampler.anchor_timesteps.max().item() < original_joint_vel.shape[0]
+
+
+def test_motion_command_recovery_reset_mask_respects_sample_probability_extremes():
+    term = object.__new__(MotionCommand)
+    term.device = "cpu"
+    term.recovery_init_dataset = object()
+    term.motion_cfg = SimpleNamespace(
+        recovery_init_dataset=SimpleNamespace(enabled=True, sample_probability=0.0),
+    )
+    term._env = SimpleNamespace(is_evaluating=False)
+    env_ids = torch.tensor([0, 1, 2], dtype=torch.long)
+
+    assert not term._sample_recovery_reset_mask(env_ids).any()
+
+    term.motion_cfg.recovery_init_dataset.sample_probability = 1.0
+    assert term._sample_recovery_reset_mask(env_ids).all()
+
+
+def test_motion_command_recovery_reset_mask_uses_random_draws_for_mixed_probability():
+    term = object.__new__(MotionCommand)
+    term.device = "cpu"
+    term.recovery_init_dataset = object()
+    term.motion_cfg = SimpleNamespace(
+        recovery_init_dataset=SimpleNamespace(enabled=True, sample_probability=0.5),
+    )
+    term._env = SimpleNamespace(is_evaluating=False)
+    env_ids = torch.tensor([0, 1, 2], dtype=torch.long)
+
+    with patch("torch.rand", return_value=torch.tensor([0.2, 0.8, 0.49], dtype=torch.float32)):
+        mask = term._sample_recovery_reset_mask(env_ids)
+
+    assert mask.tolist() == [True, False, True]
+
+
+def test_motion_command_reset_applies_recovery_batch_to_selected_envs():
+    term = object.__new__(MotionCommand)
+    term.num_envs = 2
+    term.device = "cpu"
+    term.time_steps = torch.zeros(2, dtype=torch.long)
+    term.last_reset_used_recovery = torch.zeros(2, dtype=torch.bool)
+    term.motion = SimpleNamespace(time_step_total=4, has_object=False)
+    term.init_pose_cfg = NoiseToInitialPoseConfig()
+    term.motion_cfg = SimpleNamespace(
+        start_at_timestep_zero_prob=0.0,
+        recovery_init_dataset=SimpleNamespace(
+            enabled=True,
+            sample_probability=0.5,
+            augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+        )
+    )
+    simulator = SimpleNamespace(
+        dof_pos_limits=torch.tensor([[-1.0, 1.0], [-1.0, 1.0]], dtype=torch.float32),
+        dof_pos=torch.zeros((2, 2), dtype=torch.float32),
+        dof_vel=torch.zeros((2, 2), dtype=torch.float32),
+        robot_root_states=torch.zeros((2, 13), dtype=torch.float32),
+        scene=SimpleNamespace(env_origins=torch.tensor([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]], dtype=torch.float32)),
+    )
+    term._env = SimpleNamespace(simulator=simulator)
+    term.recovery_init_dataset = SimpleNamespace(
+        sample=lambda batch_size, augmentation_mode: SimpleNamespace(
+            dof_pos=torch.tensor([[0.7, -0.7]], dtype=torch.float32),
+            dof_vel=torch.tensor([[0.3, -0.3]], dtype=torch.float32),
+            root_states=torch.tensor(
+                [[1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]],
+                dtype=torch.float32,
+            ),
+        )
+    )
+
+    with patch.object(MotionCommand, "_update_sampling_failures", return_value=None), patch.object(
+        MotionCommand, "_sample_reference_timesteps", return_value=torch.zeros(2, dtype=torch.long)
+    ), patch.object(
+        MotionCommand, "_sample_recovery_reset_mask", return_value=torch.tensor([False, True], dtype=torch.bool)
+    ), patch.object(
+        MotionCommand, "root_pos_w", new_callable=PropertyMock, return_value=torch.tensor([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+    ), patch.object(
+        MotionCommand,
+        "root_quat_w",
+        new_callable=PropertyMock,
+        return_value=torch.tensor([[0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]], dtype=torch.float32),
+    ), patch.object(
+        MotionCommand, "root_lin_vel_w", new_callable=PropertyMock, return_value=torch.zeros((2, 3), dtype=torch.float32)
+    ), patch.object(
+        MotionCommand, "root_ang_vel_w", new_callable=PropertyMock, return_value=torch.zeros((2, 3), dtype=torch.float32)
+    ), patch.object(
+        MotionCommand, "joint_pos", new_callable=PropertyMock, return_value=torch.tensor([[0.1, -0.1], [0.2, -0.2]], dtype=torch.float32)
+    ), patch.object(
+        MotionCommand, "joint_vel", new_callable=PropertyMock, return_value=torch.zeros((2, 2), dtype=torch.float32)
+    ):
+        term.reset(torch.tensor([0, 1], dtype=torch.long))
+
+    assert term.last_reset_used_recovery.tolist() == [False, True]
+    assert torch.allclose(simulator.dof_pos[0], torch.tensor([0.1, -0.1]))
+    assert torch.allclose(simulator.dof_pos[1], torch.tensor([0.7, -0.7]))
+    assert torch.allclose(simulator.dof_vel[1], torch.tensor([0.3, -0.3]))
+    assert torch.allclose(simulator.robot_root_states[0, :3], torch.tensor([0.1, 0.2, 0.3]))
+    assert torch.allclose(simulator.robot_root_states[1, :3], torch.tensor([11.0, 2.0, 3.0]))
+    assert torch.allclose(simulator.robot_root_states[1, 3:7], torch.tensor([0.0, 0.0, 0.0, 1.0]))

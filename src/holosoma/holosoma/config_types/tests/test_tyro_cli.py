@@ -53,14 +53,21 @@ def test_recovery_preset_uses_explicit_grsi_augmentation_mode():
     config = tyro.cli(AnnotatedExperimentConfig, args=("exp:g1-29dof-wbt-recovery-fast-sac",), config=TYRO_CONIFG)
     recovery_cfg = config.command.setup_terms["motion_command"].params["motion_config"].recovery_init_dataset
     motion_cfg = config.command.setup_terms["motion_command"].params["motion_config"]
+    bad_tracking_cfg = config.termination.terms["bad_tracking"]
+
+    assert config.robot.asset.xml_file.endswith("g1/g1_29dof_kfa.xml")
+    assert config.robot.asset.urdf_file.endswith("g1/g1_29dof_kfa.urdf")
     assert recovery_cfg.augmentation_mode == "rotation_recombination"
     assert recovery_cfg.dataset_kind == "recovery_init"
     assert motion_cfg.start_at_timestep_zero_prob == 0.0
     assert motion_cfg.freeze_at_timestep_zero_prob == 0.0
     assert motion_cfg.enable_default_pose_prepend is False
     assert motion_cfg.enable_default_pose_append is False
+    assert motion_cfg.recovery_shoulder_height_threshold == 1.0
     assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
-    assert config.termination.terms["bad_tracking"].func.endswith(":RecoveryAwareBadTracking")
+    assert bad_tracking_cfg.func.endswith(":RecoveryAwareBadTracking")
+    assert bad_tracking_cfg.params["shoulder_height_threshold"] == 1.0
+    assert bad_tracking_cfg.params["max_consecutive_bad_tracking_steps"] == 8
     assert config.randomization.setup_terms["mass_randomizer"].params["link_mass_range"] == [0.9, 1.2]
     assert config.randomization.setup_terms["setup_action_delay_buffers"].params["enabled"] is True
     assert "undesired_contacts" in config.reward.terms

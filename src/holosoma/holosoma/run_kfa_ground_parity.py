@@ -22,6 +22,7 @@ from holosoma.utils.kfa_parity import (
     build_training_command,
     resolve_clip_set,
 )
+from holosoma.utils.kfa_paper_alignment import build_kfa_ground_paper_alignment_evidence
 
 
 def extract_checkpoint_path(command_output: str) -> str | None:
@@ -82,6 +83,7 @@ def main() -> None:
         "suite_name": "kfa_ground_parity",
         "paper_alignment_status": "paper_approximate",
         "paper_alignment_reason": "Low-kinetic Eq. 17 update rule remains unresolved from public paper text.",
+        "paper_alignment_evidence": build_kfa_ground_paper_alignment_evidence(),
         "readiness_gate": {
             "scope": "ground",
             "required_train_clip": config.train_clip,
@@ -136,6 +138,7 @@ def main() -> None:
                 "preset_key": preset_key,
                 "experiment": KFA_PARITY_PRESETS[preset_key]["experiment"],
                 "paper_alignment_status": "paper_approximate",
+                "paper_alignment_evidence": build_kfa_ground_paper_alignment_evidence(),
                 "seed": seed,
                 "artifact_dir": str(artifact_dir),
                 "train_clip": asdict(clip_set["train"]),

@@ -14,6 +14,7 @@ from holosoma.utils.kfa_parity import (
     resolve_kfa_dataset_root,
     resolve_kfa_motion_path,
 )
+from holosoma.utils.kfa_paper_alignment import build_kfa_ground_paper_alignment_evidence
 
 
 def test_resolve_kfa_motion_path_prefers_existing_npz(tmp_path):
@@ -101,3 +102,13 @@ def test_parity_harness_manifest_fields_are_yaml_safe(tmp_path):
 
     assert Path(loaded["dataset_root"]) == dataset_root.resolve()
     assert loaded["train_clip"]["path"].endswith("/1317.npz")
+
+
+def test_paper_alignment_evidence_table_uses_restricted_status_values():
+    evidence = build_kfa_ground_paper_alignment_evidence()
+
+    assert evidence
+    assert {item["status"] for item in evidence} <= {"matched", "mismatch", "paper_unspecified"}
+    status_by_key = {item["key"]: item["status"] for item in evidence}
+    assert status_by_key["low_kinetic_eq17_update_rule"] == "paper_unspecified"
+    assert status_by_key["recovery_phase_switching"] == "matched"
