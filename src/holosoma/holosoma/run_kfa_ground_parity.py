@@ -80,6 +80,8 @@ def main() -> None:
 
     suite_manifest = {
         "suite_name": "kfa_ground_parity",
+        "paper_alignment_status": "paper_approximate",
+        "paper_alignment_reason": "Low-kinetic Eq. 17 update rule remains unresolved from public paper text.",
         "readiness_gate": {
             "scope": "ground",
             "required_train_clip": config.train_clip,
@@ -133,6 +135,7 @@ def main() -> None:
             run_manifest = {
                 "preset_key": preset_key,
                 "experiment": KFA_PARITY_PRESETS[preset_key]["experiment"],
+                "paper_alignment_status": "paper_approximate",
                 "seed": seed,
                 "artifact_dir": str(artifact_dir),
                 "train_clip": asdict(clip_set["train"]),
@@ -155,6 +158,20 @@ def main() -> None:
             }
 
             if config.execute:
+                if preset_key == "recovery":
+                    recovery_generation_command = run_manifest["recovery_dataset_generation_command"]
+                    recovery_validation_command = run_manifest["recovery_dataset_validation_command"]
+                    _run_command(
+                        recovery_generation_command,
+                        repo_root,
+                        artifact_dir / "recovery_dataset_generation.log",
+                    )
+                    _run_command(
+                        recovery_validation_command,
+                        repo_root,
+                        artifact_dir / "recovery_dataset_validation.log",
+                    )
+
                 training_output = _run_command(training_command, repo_root, artifact_dir / "train.log")
                 checkpoint_path = extract_checkpoint_path(training_output)
                 if checkpoint_path is None:
@@ -167,7 +184,9 @@ def main() -> None:
                     max_eval_steps=config.max_eval_steps,
                 )
                 _run_command(eval_command, repo_root, artifact_dir / "eval.log")
-                onnx_path = str((Path(checkpoint_path).parent / "exported" / Path(checkpoint_path).name.replace(".pt", ".onnx")).resolve())
+                onnx_path = str(
+                    (Path(checkpoint_path).parent / "exported" / Path(checkpoint_path).name.replace(".pt", ".onnx")).resolve()
+                )
                 run_manifest["checkpoint_path"] = checkpoint_path
                 run_manifest["eval_command"] = eval_command
                 run_manifest["onnx_path"] = onnx_path

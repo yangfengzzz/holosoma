@@ -260,6 +260,25 @@ def test_feet_slip_penalty_uses_contact_force_stance_detection():
     assert penalty.item() == pytest.approx(5.0)
 
 
+def test_feet_slip_penalty_uses_z_force_threshold_only():
+    env = SimpleNamespace(
+        feet_indices=torch.tensor([0, 1]),
+        simulator=SimpleNamespace(
+            contact_forces=torch.tensor(
+                [[[9.0, 0.0, 0.2], [0.0, 0.0, 9.0]]],
+                dtype=torch.float32,
+            ),
+            _rigid_body_vel=torch.tensor(
+                [[[3.0, 4.0, 0.0], [6.0, 8.0, 0.0]]],
+                dtype=torch.float32,
+            ),
+        ),
+    )
+
+    penalty = wbt_reward_terms.feet_slip_penalty(env, contact_force_threshold=8.0)
+    assert penalty.item() == pytest.approx(10.0)
+
+
 def test_close_feet_penalty_only_applies_while_standing():
     motion_command = SimpleNamespace(
         motion_cfg=SimpleNamespace(recovery_shoulder_height_threshold=1.0),
@@ -310,7 +329,10 @@ def test_joint_action_rate_penalty_targets_requested_group():
 
 
 def test_recovery_aware_bad_tracking_hysteresis():
-    motion_command = SimpleNamespace(recovery_active_mask=lambda threshold: torch.tensor([True, False]))
+    motion_command = SimpleNamespace(
+        motion_cfg=SimpleNamespace(body_names_to_track=["left_ankle_roll_link", "right_ankle_roll_link"]),
+        recovery_active_mask=lambda threshold: torch.tensor([True, False]),
+    )
     env = SimpleNamespace(
         num_envs=2,
         device="cpu",
@@ -332,7 +354,7 @@ def test_recovery_aware_bad_tracking_hysteresis():
     )
     term = wbt_termination_terms.RecoveryAwareBadTracking(cfg, env)
 
-    with patch.object(wbt_termination_terms.BadTrackingZOnly, "__call__", return_value=torch.tensor([True, True])):
+    with patch.object(wbt_termination_terms.BadTracking, "__call__", return_value=torch.tensor([True, True])):
         first = term(env)
         second = term(env)
 
@@ -368,9 +390,43 @@ def test_bad_tracking_orientation_uses_radian_quaternion_error():
             "bad_object_ori_threshold": 0.8,
         },
     )
-    term = wbt_termination_terms.BadTrackingZOnly(cfg, env)
+    term = wbt_termination_terms.BadTracking(cfg, env)
 
     assert term.bad_ref_ori(motion_command).tolist() == [True]
+
+
+def test_bad_tracking_position_uses_full_vector_distance():
+    motion_command = SimpleNamespace(
+        motion_cfg=SimpleNamespace(body_names_to_track=["left_ankle_roll_link"]),
+        ref_quat_w=torch.tensor([[0.0, 0.0, 0.0, 1.0]], dtype=torch.float32),
+        robot_ref_quat_w=torch.tensor([[0.0, 0.0, 0.0, 1.0]], dtype=torch.float32),
+        ref_pos_w=torch.tensor([[0.4, 0.4, 0.0]], dtype=torch.float32),
+        robot_ref_pos_w=torch.zeros((1, 3), dtype=torch.float32),
+        body_pos_relative_w=torch.tensor([[[0.2, 0.2, 0.0]]], dtype=torch.float32),
+        robot_body_pos_w=torch.zeros((1, 1, 3), dtype=torch.float32),
+        motion=SimpleNamespace(has_object=False),
+    )
+    env = SimpleNamespace(
+        num_envs=1,
+        device="cpu",
+        command_manager=SimpleNamespace(get_state=lambda name: motion_command),
+    )
+    cfg = TerminationTermCfg(
+        func="unused",
+        params={
+            "bad_ref_pos_threshold": 0.5,
+            "bad_ref_ori_threshold": 0.8,
+            "bad_motion_body_pos_threshold": 0.25,
+            "body_names_to_track": ["left_ankle_roll_link"],
+            "bad_motion_body_pos_body_names": ["left_ankle_roll_link"],
+            "bad_object_pos_threshold": 0.25,
+            "bad_object_ori_threshold": 0.8,
+        },
+    )
+    term = wbt_termination_terms.BadTracking(cfg, env)
+
+    assert term.bad_ref_pos(motion_command).tolist() == [True]
+    assert term.bad_motion_body_pos(motion_command).tolist() == [True]
 
 
 def test_motion_command_low_kinetic_sampler_uses_pre_transition_motion():

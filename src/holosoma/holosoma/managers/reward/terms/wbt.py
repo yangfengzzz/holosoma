@@ -155,9 +155,9 @@ def motion_com_support_alignment_exp(
 
 
 def feet_slip_penalty(env: WholeBodyTrackingManager, contact_force_threshold: float = 1.0) -> torch.Tensor:
-    contact_forces = torch.norm(env.simulator.contact_forces[:, env.feet_indices, :], dim=-1)
+    contact_forces_z = env.simulator.contact_forces[:, env.feet_indices, 2]
     foot_vel_xy = env.simulator._rigid_body_vel[:, env.feet_indices, :2]
-    contact_mask = contact_forces > contact_force_threshold
+    contact_mask = contact_forces_z > contact_force_threshold
     return torch.sum(torch.norm(foot_vel_xy, dim=-1) * contact_mask.float(), dim=1)
 
 

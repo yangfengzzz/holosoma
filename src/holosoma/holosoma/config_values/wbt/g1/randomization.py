@@ -74,15 +74,24 @@ base_setup_terms = {
             "kp_range": [0.9, 1.1],
             "kd_range": [0.9, 1.1],
             "rfi_lim_range": [1.0, 1.0],
-            "enable_pd_gain": False,
+            "enable_pd_gain": True,
             "enable_rfi_lim": False,
+        },
+    ),
+    "mass_randomizer": RandomizationTermCfg(
+        func="holosoma.managers.randomization.terms.locomotion:randomize_mass_startup",
+        params={
+            "enable_link_mass": True,
+            "link_mass_range": [0.9, 1.2],
+            "enable_base_mass": True,
+            "added_mass_range": [-1.0, 3.0],
         },
     ),
     "setup_action_delay_buffers": RandomizationTermCfg(
         func="holosoma.managers.randomization.terms.locomotion:setup_action_delay_buffers",
         params={
             "ctrl_delay_step_range": [0, 1],
-            "enabled": False,
+            "enabled": True,
         },
     ),
     **robot_state_dr_at_setup,

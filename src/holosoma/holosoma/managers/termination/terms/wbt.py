@@ -134,7 +134,7 @@ class BadTrackingZOnly(BadTracking):
         return torch.any(error > self.bad_motion_body_pos_threshold, dim=-1)
 
 
-class RecoveryAwareBadTracking(BadTrackingZOnly):
+class RecoveryAwareBadTracking(BadTracking):
     """Bad tracking term with hysteresis while the robot is in recovery mode."""
 
     def __init__(self, cfg: TerminationTermCfg, env: WholeBodyTrackingManager):

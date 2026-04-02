@@ -32,6 +32,10 @@ def test_kfa_stand_experiment_cli_surface():
     assert config.reward.terms["motion_relative_body_position_error_exp"].weight == 4.0
     assert config.reward.terms["motion_relative_body_position_error_exp"].tags == ["r_mtr", "tracking"]
     assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
+    assert config.termination.terms["bad_tracking"].func.endswith(":BadTracking")
+    assert config.randomization.setup_terms["mass_randomizer"].params["enable_base_mass"] is True
+    assert config.randomization.setup_terms["setup_action_delay_buffers"].params["enabled"] is True
+    assert config.randomization.setup_terms["actuator_randomizer_state"].params["enable_pd_gain"] is True
     assert "undesired_contacts" in config.reward.terms
     assert "head_link" not in config.reward.terms["undesired_contacts"].params["undesired_contacts_body_names"]
     assert "recovery_action_rate_penalty" not in config.reward.terms
@@ -56,6 +60,9 @@ def test_recovery_preset_uses_explicit_grsi_augmentation_mode():
     assert motion_cfg.enable_default_pose_prepend is False
     assert motion_cfg.enable_default_pose_append is False
     assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
+    assert config.termination.terms["bad_tracking"].func.endswith(":RecoveryAwareBadTracking")
+    assert config.randomization.setup_terms["mass_randomizer"].params["link_mass_range"] == [0.9, 1.2]
+    assert config.randomization.setup_terms["setup_action_delay_buffers"].params["enabled"] is True
     assert "undesired_contacts" in config.reward.terms
 
 

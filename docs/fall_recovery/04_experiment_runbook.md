@@ -128,6 +128,8 @@ python src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29do
 
 ## Remaining Differences From Paper
 - Section 3 preprocessing is not reimplemented in Holosoma. Ground training here depends on the locally prepared `KungFuAthleteBot` `org_smoothed_mj` clips.
+- Low-kinetic sampling still uses a documented repo interpretation of the paper's undisclosed Eq. 17 update rule.
+  Treat the current recovery preset as `paper_approximate` until author evidence resolves that ambiguity.
 - Ground parity workflow now carries an explicit one-seed readiness gate, but this shell has not completed the real IsaacSim-plus-MuJoCo gate yet.
   Next action: run `run_kfa_ground_parity.py --execute=True --preset-keys stand recovery --seeds 1` in an IsaacSim-ready environment and log the resulting manifests before broader training.
 - The local KungFuAthleteBot checkout in this workspace uses `203.npz` as the actual optional follow-up clip.

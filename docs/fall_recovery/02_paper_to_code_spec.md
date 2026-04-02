@@ -7,6 +7,8 @@
 - Repo paper-parity note:
   the public paper does not expose the exact Eq. 17 weight-update rule, so Holosoma uses one explicit interpretation:
   each failure updates only the nearest preceding anchor and leaves all other anchors unchanged.
+- Readiness note:
+  until Eq. 17 is confirmed from author code or clarification, this path should be treated as `paper_approximate`, not a fully confirmed paper reproduction.
 
 ## Recovery Reset Source
 - `MotionConfig.recovery_init_dataset` enables a second reset source.
@@ -40,8 +42,11 @@
 - Close-feet penalty
 - Root orientation penalty
 - Knee and ankle action-rate penalties
+- Feet-slip parity note:
+  the paper-facing preset uses vertical contact force (`F_z`) to gate lateral foot-velocity penalties.
 
 ## Recovery Termination
 - Outside recovery: bad tracking terminates immediately
 - During recovery: bad tracking increments a counter
 - Termination occurs only after `max_consecutive_bad_tracking_steps`
+- Paper-facing presets use full position-deviation checks for bad tracking; the legacy z-only variant remains available only as a non-paper fallback.
