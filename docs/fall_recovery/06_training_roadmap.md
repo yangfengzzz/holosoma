@@ -2,6 +2,8 @@
 
 This roadmap is the recommended step-by-step path for reproducing the paper-style Ground workflow in this repo.
 
+This document is the smoke-test and readiness version of the workflow. For the real end-to-end stand and recovery training plus evaluation procedure, use `08_full_training_and_evaluation_guide.md`.
+
 This roadmap is intentionally Ground-only. Section 3 preprocessing is externalized to `KungFuAthleteBot`; Holosoma consumes the resulting `org_smoothed_mj` clips and does not reimplement that pipeline in this stage.
 
 Use only:
