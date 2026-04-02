@@ -6,7 +6,7 @@ from holosoma.config_types.command import CommandManagerCfg, CommandTermCfg, Mot
 from holosoma.utils.kfa_parity import (
     KFA_OPTIONAL_REGRESSION_CLIP_IDS,
     KFA_PRIMARY_REGRESSION_CLIP_ID,
-    KFA_RELEASED_MOTION_ROOT_CANDIDATES,
+    KFA_RELEASED_MOTION_ROOT,
     KFA_TRAINING_EXAMPLE_CLIP_ID,
     get_kfa_released_motion_path,
 )
@@ -140,7 +140,7 @@ g1_29dof_wbt_stand_command = replace(
 __all__ = [
     "KFA_OPTIONAL_REGRESSION_CLIP_IDS",
     "KFA_PRIMARY_REGRESSION_CLIP_ID",
-    "KFA_RELEASED_MOTION_ROOT_CANDIDATES",
+    "KFA_RELEASED_MOTION_ROOT",
     "KFA_TRAINING_EXAMPLE_CLIP_ID",
     "g1_29dof_wbt_command",
     "g1_29dof_wbt_recovery_command",

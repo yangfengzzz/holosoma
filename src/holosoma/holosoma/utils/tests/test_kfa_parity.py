@@ -10,7 +10,6 @@ from holosoma.utils.kfa_parity import (
     build_mujoco_commands,
     build_parity_artifact_dir,
     build_training_command,
-    detect_kfa_motion_layout,
     resolve_clip_set,
     resolve_kfa_dataset_root,
     resolve_kfa_motion_path,
@@ -27,18 +26,6 @@ def test_resolve_kfa_motion_path_prefers_existing_npz(tmp_path):
     assert resolved.endswith("/1317.npz")
 
 
-def test_resolve_kfa_motion_path_supports_nested_layout(tmp_path):
-    dataset_root = tmp_path / "org_smoothed_mj"
-    nested_dir = dataset_root / "1317"
-    nested_dir.mkdir(parents=True)
-    (nested_dir / "1317.npz").write_bytes(b"")
-
-    resolved = resolve_kfa_motion_path("1317", dataset_root=str(dataset_root), require_exists=True)
-
-    assert resolved.endswith("/1317/1317.npz")
-    assert detect_kfa_motion_layout(resolved, str(dataset_root)) == "nested"
-
-
 def test_resolve_clip_set_marks_missing_optional_clip(tmp_path):
     dataset_root = tmp_path / "org_smoothed_mj"
     dataset_root.mkdir()
@@ -50,7 +37,17 @@ def test_resolve_clip_set_marks_missing_optional_clip(tmp_path):
     assert clip_set["train"].exists is True
     assert clip_set["eval"].exists is True
     optional_status = {item.clip_id: item.exists for item in clip_set["optional_eval"]}
-    assert optional_status == {"969": True, "0203": False}
+    assert optional_status == {"969": True, "203": False}
+
+
+def test_resolve_kfa_motion_path_requires_real_local_clip_id(tmp_path):
+    dataset_root = tmp_path / "org_smoothed_mj"
+    dataset_root.mkdir()
+    (dataset_root / "203.npz").write_bytes(b"")
+
+    resolved = resolve_kfa_motion_path("203", dataset_root=str(dataset_root), require_exists=True)
+
+    assert resolved.endswith("/203.npz")
 
 
 def test_build_parity_commands_include_expected_overrides(tmp_path):
@@ -90,8 +87,14 @@ def test_parity_harness_manifest_fields_are_yaml_safe(tmp_path):
 
     manifest = {
         "dataset_root": resolve_kfa_dataset_root(str(dataset_root), require_exists=True),
-        "train_clip": {"path": resolve_kfa_motion_path("1317", str(dataset_root), require_exists=True)},
-        "eval_clip": {"path": resolve_kfa_motion_path("1307", str(dataset_root), require_exists=True)},
+        "train_clip": {
+            "clip_id": "1317",
+            "path": resolve_kfa_motion_path("1317", str(dataset_root), require_exists=True),
+        },
+        "eval_clip": {
+            "clip_id": "1307",
+            "path": resolve_kfa_motion_path("1307", str(dataset_root), require_exists=True),
+        },
     }
     dumped = yaml.safe_dump(manifest)
     loaded = yaml.safe_load(dumped)

@@ -50,9 +50,9 @@ def test_recovery_preset_uses_explicit_grsi_augmentation_mode():
 
 
 def test_kfa_released_clip_helpers():
-    assert get_kfa_released_motion_path(KFA_TRAINING_EXAMPLE_CLIP_ID).endswith(("/1317.npz", "/1317_mj.npz"))
-    assert get_kfa_released_motion_path(KFA_PRIMARY_REGRESSION_CLIP_ID).endswith(("/1307.npz", "/1307_mj.npz"))
-    assert KFA_OPTIONAL_REGRESSION_CLIP_IDS == ("969", "0203")
+    assert get_kfa_released_motion_path(KFA_TRAINING_EXAMPLE_CLIP_ID).endswith("/1317.npz")
+    assert get_kfa_released_motion_path(KFA_PRIMARY_REGRESSION_CLIP_ID).endswith("/1307.npz")
+    assert KFA_OPTIONAL_REGRESSION_CLIP_IDS == ("969", "203")
 
 
 def test_recovery_ablation_presets_resolve_with_expected_slip_weights():
@@ -81,7 +81,5 @@ def test_recovery_ablation_presets_resolve_with_expected_slip_weights():
     assert slip5.training.name == "g1_29dof_wbt_recovery_slip5_fast_sac_manager"
     assert slip5.reward.terms["feet_slip_penalty"].weight == -5.0
 
-    assert slip3.command.setup_terms["motion_command"].params["motion_config"].motion_file.endswith(
-        ("/1317.npz", "/1317_mj.npz")
-    )
+    assert slip3.command.setup_terms["motion_command"].params["motion_config"].motion_file.endswith("/1317.npz")
     assert slip5.termination.terms["bad_tracking"].params["shoulder_height_threshold"] == 1.0

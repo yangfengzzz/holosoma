@@ -6,16 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-KFA_RELEASED_MOTION_ROOT_CANDIDATES = (
-    "./KungFuAthleteBot/collection_g129dof/org_smoothed_mj",
-    "./datasets/KungFuAthleteBot/org_smoothed_mj",
-)
-KFA_RELEASED_MOTION_FILE_SUFFIXES = (".npz", "_mj.npz")
-KFA_RELEASED_MOTION_LAYOUTS = ("flat", "nested")
+KFA_RELEASED_MOTION_ROOT = "./KungFuAthleteBot/collection_g129dof/org_smoothed_mj"
 
 KFA_TRAINING_EXAMPLE_CLIP_ID = "1317"
 KFA_PRIMARY_REGRESSION_CLIP_ID = "1307"
-KFA_OPTIONAL_REGRESSION_CLIP_IDS = ("969", "0203")
+KFA_OPTIONAL_REGRESSION_CLIP_IDS = ("969", "203")
 KFA_PARITY_SEEDS = (1, 2, 3)
 
 KFA_PARITY_PRESETS = {
@@ -48,13 +43,12 @@ class KfaParityClipResolution:
     path: str
     exists: bool
     dataset_root: str
-    layout: str
 
 
 def _candidate_dataset_roots(dataset_root: str | None = None) -> tuple[str, ...]:
     if dataset_root is not None:
         return (dataset_root,)
-    return KFA_RELEASED_MOTION_ROOT_CANDIDATES
+    return (KFA_RELEASED_MOTION_ROOT,)
 
 
 def resolve_kfa_dataset_root(dataset_root: str | None = None, require_exists: bool = False) -> str:
@@ -71,25 +65,14 @@ def resolve_kfa_dataset_root(dataset_root: str | None = None, require_exists: bo
 def resolve_kfa_motion_path(clip_id: str, dataset_root: str | None = None, require_exists: bool = False) -> str:
     resolved_root = resolve_kfa_dataset_root(dataset_root=dataset_root, require_exists=require_exists)
     root = Path(resolved_root)
+    candidate = root / f"{clip_id}.npz"
+    if candidate.exists():
+        return str(candidate.resolve())
 
-    for layout in KFA_RELEASED_MOTION_LAYOUTS:
-        for suffix in KFA_RELEASED_MOTION_FILE_SUFFIXES:
-            candidate = root / f"{clip_id}{suffix}" if layout == "flat" else root / clip_id / f"{clip_id}{suffix}"
-            if candidate.exists():
-                return str(candidate.resolve())
-
-    fallback = root / f"{clip_id}{KFA_RELEASED_MOTION_FILE_SUFFIXES[0]}"
+    fallback = candidate
     if require_exists:
         raise FileNotFoundError(f"Could not find clip {clip_id} under {resolved_root}")
     return str(fallback.resolve())
-
-
-def detect_kfa_motion_layout(motion_path: str, dataset_root: str) -> str:
-    try:
-        relative = Path(motion_path).resolve().relative_to(Path(dataset_root).resolve())
-    except ValueError:
-        return "external"
-    return "nested" if len(relative.parts) >= 2 else "flat"
 
 
 def get_kfa_released_motion_path(clip_id: str) -> str:
@@ -112,7 +95,6 @@ def resolve_clip_set(
                 path=clip_path,
                 exists=Path(clip_path).exists(),
                 dataset_root=resolved_root,
-                layout=detect_kfa_motion_layout(clip_path, resolved_root),
             )
         )
 
@@ -126,14 +108,12 @@ def resolve_clip_set(
             path=train_path,
             exists=Path(train_path).exists(),
             dataset_root=resolved_root,
-            layout=detect_kfa_motion_layout(train_path, resolved_root),
         ),
         "eval": KfaParityClipResolution(
             clip_id=eval_clip_id,
             path=eval_path,
             exists=Path(eval_path).exists(),
             dataset_root=resolved_root,
-            layout=detect_kfa_motion_layout(eval_path, resolved_root),
         ),
         "optional_eval": optional_clips,
     }

@@ -8,10 +8,10 @@ source scripts/source_isaacsim_setup.sh
 ## Released Clip Defaults
 - Training example clip: `1317`
 - Primary hard regression clip: `1307`
-- Optional parity follow-ups: `969`, `0203`
+- Optional parity follow-ups in this workspace: `969`, `203`
 - Preferred dataset root: `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj`
-- Legacy dataset root also supported: `./datasets/KungFuAthleteBot/org_smoothed_mj`
-- Accepted clip layouts: `org_smoothed_mj/<clip>.npz`, `org_smoothed_mj/<clip>_mj.npz`, and released-style `org_smoothed_mj/<clip>/<clip>.npz`
+- Accepted clip layout: `org_smoothed_mj/<clip>.npz`
+- Do not use `collection_g129dof/org_smoothed` or `kungfu_gvhmr_video_demo/...` as direct training inputs.
 
 ## Benchmark Harness
 ```bash
@@ -25,6 +25,7 @@ python src/holosoma/holosoma/run_kfa_ground_parity.py \
 - Dry-run is the default and writes `suite_manifest.yaml` plus one `run_manifest.yaml` per preset/seed artifact directory
 - Add `--execute=True` to run local train and same-sim eval steps in sequence
 - The suite manifest now records the Ground readiness gate; implementation is only considered complete after one full seed passes stand train, recovery train, same-sim eval, ONNX export, and MuJoCo launch.
+- The generated manifests record the actual clip id and resolved local file path.
 
 ## 1. Generate Recovery States
 ```bash
@@ -70,7 +71,7 @@ python src/holosoma/holosoma/eval_agent.py \
 ```
 
 - `eval_agent.py` writes same-sim artifacts under the eval log directory and exports ONNX beside the checkpoint when `training.export_onnx=True`.
-- Re-run the same command with clip `969` or `0203` by changing only the `motion_file` override.
+- Re-run the same command with clip `969` or local clip `203` by changing only the `motion_file` override.
 
 ## 5. MuJoCo Sim-to-Sim Evaluation
 Terminal 1:
@@ -109,10 +110,10 @@ python src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29do
 - Same-sim good but MuJoCo unstable:
   verify the exported ONNX came from the exact checkpoint under test and that inference uses `inference:g1-29dof-wbt`
 - Stable standing but poor imitation:
-  compare `1307` against `969` and `0203` before changing reward terms
+  compare `1307` against `969` and local `203` before changing reward terms
 
 ## Remaining Differences From Paper
 - Ground parity workflow now carries an explicit one-seed readiness gate, but this shell has not completed the real IsaacSim-plus-MuJoCo gate yet.
   Next action: run `run_kfa_ground_parity.py --execute=True --preset-keys stand recovery --seeds 1` in an IsaacSim-ready environment and log the resulting manifests before broader training.
-- The local KungFuAthleteBot checkout in this workspace contains `1317`, `1307`, and `969`, but not `0203`.
-  Next action: add the missing clip locally if needed, otherwise let the harness record `0203` as unavailable and continue with the available Ground suite.
+- The local KungFuAthleteBot checkout in this workspace uses `203.npz` as the actual optional follow-up clip.
+  Next action: use `203` consistently in local runs and docs.

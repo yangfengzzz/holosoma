@@ -149,6 +149,12 @@ python src/holosoma/holosoma/run_kfa_ground_parity.py \
 
 This helper defaults to seeds `1,2,3` and the full paper-facing preset family, and writes one `run_manifest.yaml` per preset/seed pair.
 The generated `suite_manifest.yaml` also records the one-seed Ground readiness gate; implementation is only considered complete after `stand` and `recovery` both pass train, same-sim eval, ONNX export, and MuJoCo launch.
+Treat the local KungFuAthlete clone as:
+- `collection_g129dof/org_smoothed_mj`: default training and evaluation motions
+- `collection_g129dof/org_smoothed`: qpos source data and conversion provenance
+- `kungfu_gvhmr_video_demo/...`: mocap and visualization data only
+
+For the staged Ground-only workflow, see [06_training_roadmap.md](/home/yangfengzzz/Desktop/holosoma/docs/fall_recovery/06_training_roadmap.md).
 
 ---
 
@@ -186,6 +192,8 @@ python src/holosoma/holosoma/eval_agent.py \
     --checkpoint=<CHECKPOINT_PATH> \
     --command.setup_terms.motion_command.params.motion_config.motion_file=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1307.npz
 ```
+
+In this workspace, the optional follow-up clip is `203.npz`.
 
 ### Cross-Simulator Evaluation (MuJoCo)
 
