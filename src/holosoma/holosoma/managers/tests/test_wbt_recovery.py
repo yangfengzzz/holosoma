@@ -12,7 +12,11 @@ from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler
 from holosoma.managers.reward.terms import wbt as wbt_reward_terms
 from holosoma.managers.termination.terms import wbt as wbt_termination_terms
 from holosoma.config_types.command import MotionConfig
-from holosoma.utils.recovery_init_dataset import RecoveryDatasetMetadata, RecoveryInitDataset
+from holosoma.utils.recovery_init_dataset import (
+    RecoveryDatasetMetadata,
+    RecoveryInitDataset,
+    apply_recovery_root_state_augmentation,
+)
 
 
 def test_low_kinetic_anchor_sampler_extracts_and_updates_weights():
@@ -110,6 +114,25 @@ def test_recovery_dataset_rotation_recombination_preserves_quaternion_norm(tmp_p
     dataset = RecoveryInitDataset(str(dataset_path), "cpu")
     batch = dataset.sample(2, augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION)
     assert torch.allclose(torch.norm(batch.root_states[:, 3:7], dim=1), torch.ones(2), atol=1e-4)
+
+
+def test_processed_recovery_dataset_materialization_differs_from_raw_states():
+    raw_root_states = torch.tensor(
+        [
+            [0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.1, 0.0, 0.0, 0.1, 0.2, 0.3],
+            [0.0, 0.0, 0.6, 0.2, 0.1, 0.0, 0.97, 0.0, 0.1, 0.0, 0.4, 0.5, 0.6],
+        ],
+        dtype=torch.float32,
+    )
+
+    torch.manual_seed(0)
+    processed_root_states = apply_recovery_root_state_augmentation(
+        raw_root_states,
+        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+    )
+
+    assert not torch.allclose(processed_root_states, raw_root_states)
+    assert torch.allclose(torch.norm(processed_root_states[:, 3:7], dim=1), torch.ones(2), atol=1e-4)
 
 
 def test_recovery_action_rate_penalty_is_gated_by_recovery_state():

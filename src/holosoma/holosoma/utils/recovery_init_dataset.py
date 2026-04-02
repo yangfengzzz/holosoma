@@ -122,12 +122,11 @@ class RecoveryInitDataset:
         dof_vel = self.dof_vel[sample_ids].clone()
 
         mode = augmentation_mode or self.metadata.augmentation_mode
-        if mode == MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.YAW:
-            root_states = _apply_yaw_augmentation(root_states)
-        elif mode == MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION:
-            root_states = _apply_rotation_recombination(root_states, self.root_states, self.device)
-        elif mode != MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.NONE:
-            raise ValueError(f"Unsupported recovery augmentation mode: {mode}")
+        root_states = apply_recovery_root_state_augmentation(
+            root_states,
+            augmentation_mode=mode,
+            source_root_states=self.root_states,
+        )
 
         return RecoverySampleBatch(root_states=root_states, dof_pos=dof_pos, dof_vel=dof_vel)
 
@@ -139,6 +138,23 @@ def _rotate_yaw_vectors(vectors: torch.Tensor, yaw: torch.Tensor) -> torch.Tenso
     rotated[:, 0] = cos_yaw * vectors[:, 0] - sin_yaw * vectors[:, 1]
     rotated[:, 1] = sin_yaw * vectors[:, 0] + cos_yaw * vectors[:, 1]
     return rotated
+
+
+def apply_recovery_root_state_augmentation(
+    root_states: torch.Tensor,
+    *,
+    augmentation_mode: str | MotionConfig.RecoveryInitDatasetConfig.AugmentationMode,
+    source_root_states: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Materialize recovery-state augmentation on root states."""
+    if augmentation_mode == MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.NONE:
+        return root_states.clone()
+    if augmentation_mode == MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.YAW:
+        return _apply_yaw_augmentation(root_states)
+    if augmentation_mode == MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION:
+        donor_root_states = source_root_states if source_root_states is not None else root_states
+        return _apply_rotation_recombination(root_states, donor_root_states, str(root_states.device))
+    raise ValueError(f"Unsupported recovery augmentation mode: {augmentation_mode}")
 
 
 def _apply_yaw_augmentation(root_states: torch.Tensor) -> torch.Tensor:

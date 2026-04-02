@@ -22,6 +22,10 @@
 
 ## Tooling
 - `holosoma/generate_recovery_dataset.py`
-  Generates gravity-settled recovery initialization datasets.
+  Generates raw gravity-settled recovery initialization datasets and materialized processed variants for Ground training.
 - `holosoma/utils/recovery_init_dataset.py`
-  Loads and samples those datasets during training.
+  Loads, samples, and applies the documented recovery-state augmentation policy during training.
+
+## Scope Notes
+- Ground-only is the current paper-facing implementation target in this repo.
+- Section 3 preprocessing remains externalized to the local `KungFuAthleteBot` checkout; Holosoma consumes the resulting `org_smoothed_mj` clips rather than reproducing that pipeline.

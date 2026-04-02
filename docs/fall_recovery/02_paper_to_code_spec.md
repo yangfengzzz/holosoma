@@ -4,16 +4,22 @@
 - Reference timestep sampling is selected by `MotionConfig.sampling_strategy`.
 - `adaptive` keeps the old failure-driven timestep sampler.
 - `low_kinetic` extracts local minima of joint-velocity energy and samples anchors with failure-weight updates.
+- Repo paper-parity note:
+  the public paper does not expose the exact Eq. 17 weight-update rule, so Holosoma uses one explicit interpretation:
+  each failure updates only the nearest preceding anchor and leaves all other anchors unchanged.
 
 ## Recovery Reset Source
 - `MotionConfig.recovery_init_dataset` enables a second reset source.
 - The reference timestep still comes from the motion clip.
 - The robot state may instead come from a sampled recovery-init state with configurable probability.
+- Raw `.raw.npz` files store gravity-settled states without augmentation.
+- Processed `.npz` files store materialized augmented root states when the selected augmentation mode is not `none`.
 
 ## Recovery Signal
 - Recovery mode is defined by shoulder-height gap:
   `reference_shoulder_height - robot_shoulder_height > shoulder_height_threshold`
 - Reward gating and termination hysteresis both consume this shared signal from `MotionCommand`.
+- The default threshold source is `MotionConfig.recovery_shoulder_height_threshold`; paper-facing Ground presets keep this at `1.0`.
 
 ## Recovery Rewards
 - Shoulder-height penalty while recovering

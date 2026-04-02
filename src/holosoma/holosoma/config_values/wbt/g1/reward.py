@@ -124,56 +124,6 @@ g1_29dof_wbt_reward_w_object = RewardManagerCfg(
     }
 )
 
-g1_29dof_wbt_recovery_fast_sac_reward = RewardManagerCfg(
-    terms={
-        **g1_29dof_wbt_fast_sac_reward.terms,
-        "motion_com_support_alignment_exp": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:motion_com_support_alignment_exp",
-            params={"sigma": 0.15},
-            weight=0.4,
-        ),
-        "feet_slip_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:feet_slip_penalty",
-            params={"contact_height_threshold": 0.06},
-            weight=-0.08,
-        ),
-        "close_feet_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:close_feet_penalty",
-            params={"close_feet_threshold": 0.12},
-            weight=-0.05,
-        ),
-        "root_orientation_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:root_orientation_penalty",
-            weight=-0.2,
-        ),
-        "knee_action_rate_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:joint_action_rate_penalty",
-            params={"joint_group": "knee"},
-            weight=-0.1,
-        ),
-        "ankle_action_rate_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:joint_action_rate_penalty",
-            params={"joint_group": "ankle"},
-            weight=-0.1,
-        ),
-        "recovery_relative_shoulder_height_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:recovery_relative_shoulder_height_penalty",
-            params={"shoulder_height_threshold": 0.2},
-            weight=-0.6,
-        ),
-        "recovery_xy_root_movement_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:recovery_xy_root_movement_penalty",
-            params={"shoulder_height_threshold": 0.2},
-            weight=-0.15,
-        ),
-        "recovery_action_rate_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:recovery_action_rate_penalty",
-            params={"shoulder_height_threshold": 0.2},
-            weight=-0.25,
-        ),
-    }
-)
-
 g1_29dof_wbt_stand_fast_sac_reward = RewardManagerCfg(
     terms={
         "motion_relative_body_position_error_exp": RewardTermCfg(

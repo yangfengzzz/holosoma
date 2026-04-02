@@ -44,13 +44,15 @@
 
 ## Recovery Dataset Contract
 - Raw GRSI dataset:
-  `.raw.npz` gravity-settled fallen states
+  `.raw.npz` gravity-settled fallen states with no augmentation applied
 - Training-ready recovery dataset:
   `.npz` file with:
   - `root_states`
   - `dof_pos`
   - `dof_vel`
   - `metadata_json`
+- If `processed_augmentation_mode != none`, the processed `.npz` must contain materialized augmented `root_states`, not a metadata-only copy of the raw dataset.
+- `dof_pos` and `dof_vel` are preserved across raw and processed datasets unless a future augmentation explicitly changes them.
 - Default local output path:
   `./artifacts/recovery_init/g1_ground_v1.npz`
 
@@ -65,3 +67,4 @@
 ## Ground Scope
 - Ground-only is the default and documented path for fall-recovery work.
 - Jump clips remain out of scope for the training roadmap until Ground tracking plus recovery is stable.
+- Section 3 data cleaning is owned by `KungFuAthleteBot`; Holosoma assumes the `org_smoothed_mj` outputs are the input contract for Ground training.

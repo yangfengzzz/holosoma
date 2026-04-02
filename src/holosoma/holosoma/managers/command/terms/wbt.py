@@ -248,6 +248,12 @@ class AdaptiveTimestepsSampler:
 class LowKineticAnchorSampler:
     """Sample reset anchors from low-kinetic segments and upweight failing anchors."""
 
+    # paper_parity_note:
+    # The public paper text does not disclose the exact Eq. 17 anchor-weight
+    # update. This repo therefore adopts one explicit interpretation:
+    # attribute each failure to the nearest preceding anchor and update only
+    # that anchor's persistent weight.
+
     def __init__(
         self,
         joint_vel: torch.Tensor,
@@ -311,8 +317,9 @@ class LowKineticAnchorSampler:
         anchor_indices = torch.bucketize(failed_time_steps, self.anchor_timesteps, right=True) - 1
         anchor_indices = torch.clamp(anchor_indices, min=0, max=self.anchor_timesteps.numel() - 1)
         counts = torch.bincount(anchor_indices, minlength=self.anchor_timesteps.numel()).to(dtype=torch.float32)
-        # Eq. 17 is not fully specified in the paper release notes, so we use a
-        # persistent additive update on the nearest preceding anchor.
+        # Repo policy: update only the nearest preceding anchor for each failed
+        # timestep. This is a documented implementation choice rather than a
+        # verified reproduction of unpublished source code.
         self.anchor_weights = self.anchor_weights + (self.ema_alpha * self.failure_weight * counts)
 
     def get_stats(self) -> None:

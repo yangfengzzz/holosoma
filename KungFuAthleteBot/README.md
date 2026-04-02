@@ -24,9 +24,9 @@ After filtering and post-processing, the final dataset contains **848 motion sam
 
 Due to substantial noise in the source videos, the dataset has undergone multiple rounds of manual screening and meticulous per-sample refinement. While minor imperfections may still remain in certain samples, we ensure that the vast majority satisfy the requirements for reliable motion tracking.
 
-> **Project Status: Active Development with Ready Ground Subset**
+> **Project Status: Active Development with Ground-First Training Scope**
 > Model training is currently under active development.
-> The **Ground** subset of the dataset is largely complete and ready for training.
+> The **Ground** subset is the current training target in the local Holosoma integration.
 > The **Jump** subset still has minor imperfections due to video source limitations. Most samples have been carefully screened, though training performance may vary.
 > Your feedback and suggestions are greatly appreciated.
 
@@ -132,6 +132,8 @@ KungfuAthlete's data pipeline:
 [Video] → Cut by scene → GVHMR → [GVHMR-Pred (smplh)] → GMR → [Robot Motion (qpos)] → Artificial Selection → Height-Adjusted → [KungfuAthlete]
 ```
 
+In the local Holosoma workflow, this repository remains the source of truth for Section 3 style preprocessing. Holosoma consumes the resulting Ground clips under `collection_g129dof/org_smoothed_mj` and does not reimplement that pipeline.
+
 ### Supported Robots
 
 | Robot | ID | DOF |
@@ -225,6 +227,8 @@ python src/holosoma/holosoma/train_agent.py \
 ```
 
 This command launches training for the G1 29-DoF whole-body tracking configuration using FastSAC, with adaptive timestep sampling enabled and the specified motion file used for imitation-driven policy optimization. Please note that for highly dynamic motions involving KungfuAthlete (jump), the training performance may be less stable or suboptimal under the current configuration.
+
+For the local fall-recovery implementation stage, training readiness should be treated as blocked on the Ground parity gate in Holosoma rather than assumed from dataset availability alone.
 
 
 ## Sim-to-Sim Transfer and Deployment

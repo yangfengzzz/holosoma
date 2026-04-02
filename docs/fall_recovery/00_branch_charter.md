@@ -3,6 +3,8 @@
 ## Goal
 Implement the paper-style fall-recovery training path in Holosoma for `G1 + IsaacSim + FastSAC + WBT`, starting from Ground motions.
 
+Implementation readiness is blocked on the Ground parity gate rather than assumed from code structure alone.
+
 ## V1 Scope
 - Low-kinetic anchor sampling for reference reset timesteps
 - Mixed reset sources: motion states or recovery-init dataset states
@@ -14,12 +16,14 @@ Implement the paper-style fall-recovery training path in Holosoma for `G1 + Isaa
 - Jump subset parity
 - Real-robot deployment changes
 - Head-link-specific ablations
+- Re-implementing the paper's Section 3 dataset-cleaning pipeline inside Holosoma
 
 ## Success Criteria
 - `exp:g1-29dof-wbt-recovery-fast-sac` is a valid preset
 - Recovery dataset generation produces a reusable `.npz`
 - Same-simulator evaluation runs end-to-end
 - Unit tests cover sampler, recovery gating, hysteresis, and dataset loading
+- One seed of the Ground parity gate passes train, same-sim eval, ONNX export, and MuJoCo launch-command generation
 
 ## Baseline Commands
 ```bash

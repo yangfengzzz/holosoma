@@ -18,7 +18,7 @@ from holosoma.config_values.experiment import DEFAULTS as EXPERIMENT_DEFAULTS
 from holosoma.managers.randomization.terms.locomotion import randomize_friction_startup
 from holosoma.utils.eval_utils import init_eval_logging
 from holosoma.utils.helpers import get_class
-from holosoma.utils.recovery_init_dataset import RecoveryDatasetMetadata
+from holosoma.utils.recovery_init_dataset import RecoveryDatasetMetadata, apply_recovery_root_state_augmentation
 from holosoma.utils.safe_torch_import import torch
 
 
@@ -224,6 +224,10 @@ def main() -> None:
         root_states = np.concatenate(collected_root_states, axis=0)
         dof_pos = np.concatenate(collected_dof_pos, axis=0)
         dof_vel = np.concatenate(collected_dof_vel, axis=0)
+        processed_root_states = apply_recovery_root_state_augmentation(
+            torch.tensor(root_states, dtype=torch.float32, device=env.device),
+            augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode(args.processed_augmentation_mode),
+        ).detach().cpu().numpy()
 
         raw_metadata = build_dataset_metadata(
             args=args,
@@ -249,7 +253,7 @@ def main() -> None:
         )
         write_recovery_dataset(
             processed_output_path,
-            root_states=root_states,
+            root_states=processed_root_states,
             dof_pos=dof_pos,
             dof_vel=dof_vel,
             metadata=processed_metadata,

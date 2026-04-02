@@ -12,6 +12,7 @@ source scripts/source_isaacsim_setup.sh
 - Preferred dataset root: `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj`
 - Accepted clip layout: `org_smoothed_mj/<clip>.npz`
 - Do not use `collection_g129dof/org_smoothed` or `kungfu_gvhmr_video_demo/...` as direct training inputs.
+- Ground-only is the current implementation target. Do not start Jump experiments from this runbook.
 
 ## Benchmark Harness
 ```bash
@@ -26,6 +27,7 @@ python src/holosoma/holosoma/run_kfa_ground_parity.py \
 - Add `--execute=True` to run local train and same-sim eval steps in sequence
 - The suite manifest now records the Ground readiness gate; implementation is only considered complete after one full seed passes stand train, recovery train, same-sim eval, ONNX export, and MuJoCo launch.
 - The generated manifests record the actual clip id and resolved local file path.
+- Section 3 preprocessing remains externalized to `KungFuAthleteBot`; this repo only validates the resulting `org_smoothed_mj` Ground clips.
 
 ## 1. Generate Recovery States
 ```bash
@@ -113,6 +115,7 @@ python src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29do
   compare `1307` against `969` and local `203` before changing reward terms
 
 ## Remaining Differences From Paper
+- Section 3 preprocessing is not reimplemented in Holosoma. Ground training here depends on the locally prepared `KungFuAthleteBot` `org_smoothed_mj` clips.
 - Ground parity workflow now carries an explicit one-seed readiness gate, but this shell has not completed the real IsaacSim-plus-MuJoCo gate yet.
   Next action: run `run_kfa_ground_parity.py --execute=True --preset-keys stand recovery --seeds 1` in an IsaacSim-ready environment and log the resulting manifests before broader training.
 - The local KungFuAthleteBot checkout in this workspace uses `203.npz` as the actual optional follow-up clip.

@@ -2,6 +2,8 @@
 
 This roadmap is the recommended step-by-step path for reproducing the paper-style Ground workflow in this repo.
 
+This roadmap is intentionally Ground-only. Section 3 preprocessing is externalized to `KungFuAthleteBot`; Holosoma consumes the resulting `org_smoothed_mj` clips and does not reimplement that pipeline in this stage.
+
 Use only:
 - dataset root: `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj`
 - training clip: `1317.npz`
@@ -184,6 +186,7 @@ Expected artifacts:
 
 Pass criterion:
 - both files are written
+- the processed `.npz` contains materialized augmented `root_states` when `--processed-augmentation-mode` is not `none`
 - generator exits without IsaacSim CLI parsing errors
 
 If it fails:

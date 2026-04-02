@@ -14,6 +14,8 @@
 - Generator settle steps:
 - Recovery sample probability:
 - Recovery dataset kind:
+- Recovery augmentation mode:
+- Processed dataset materialized from raw:
 
 ## Training Outcome
 - Best checkpoint:
@@ -36,6 +38,7 @@
 - ONNX export path:
 - Video path:
 - Run manifest path:
+- Readiness gate passed:
 
 ## Notes
 - Main failure mode:
