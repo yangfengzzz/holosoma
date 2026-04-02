@@ -158,6 +158,42 @@ def build_training_command(
     return command
 
 
+def build_recovery_dataset_generation_command(
+    *,
+    recovery_dataset_path: str,
+    exp: str = "g1_29dof_wbt_recovery_fast_sac",
+    seed: int = 1,
+) -> list[str]:
+    return [
+        "python",
+        "src/holosoma/holosoma/generate_recovery_dataset.py",
+        f"--exp={exp}",
+        f"--output-path={recovery_dataset_path}",
+        "--num-samples=1024",
+        "--batch-size=128",
+        "--settle-steps=300",
+        "--friction-range=0.3",
+        "1.2",
+        "--processed-augmentation-mode=rotation_recombination",
+        f"--seed={seed}",
+    ]
+
+
+def build_recovery_dataset_validation_command(
+    *,
+    recovery_dataset_path: str,
+    exp: str = "g1_29dof_wbt_recovery_fast_sac",
+    batch_size: int = 32,
+) -> list[str]:
+    return [
+        "python",
+        "src/holosoma/holosoma/validate_recovery_dataset.py",
+        f"--exp={exp}",
+        f"--dataset-path={recovery_dataset_path}",
+        f"--batch-size={batch_size}",
+    ]
+
+
 def build_eval_command(
     checkpoint_path: str,
     motion_file: str,

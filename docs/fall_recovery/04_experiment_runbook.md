@@ -25,7 +25,8 @@ python src/holosoma/holosoma/run_kfa_ground_parity.py \
 - Default seeds: `1`, `2`, `3`
 - Dry-run is the default and writes `suite_manifest.yaml` plus one `run_manifest.yaml` per preset/seed artifact directory
 - Add `--execute=True` to run local train and same-sim eval steps in sequence
-- The suite manifest now records the Ground readiness gate; implementation is only considered complete after one full seed passes stand train, recovery train, same-sim eval, ONNX export, and MuJoCo launch.
+- The suite manifest now records the Ground readiness gate; implementation is only considered complete after one full seed passes the stricter order:
+  stand train -> stand eval/ONNX -> stand MuJoCo launch -> recovery dataset generation -> recovery dataset validation -> recovery train -> recovery eval/ONNX -> recovery MuJoCo launch
 - The generated manifests record the actual clip id and resolved local file path.
 - Section 3 preprocessing remains externalized to `KungFuAthleteBot`; this repo only validates the resulting `org_smoothed_mj` Ground clips.
 
@@ -38,6 +39,17 @@ python src/holosoma/holosoma/generate_recovery_dataset.py \
   --friction-range 0.3 1.2 \
   --processed-augmentation-mode rotation_recombination
 ```
+
+## 1b. Validate Recovery States Against WBT Recovery Resets
+```bash
+python src/holosoma/holosoma/validate_recovery_dataset.py \
+  --exp g1_29dof_wbt_recovery_fast_sac \
+  --dataset-path ./artifacts/recovery_init/g1_ground_v1.npz \
+  --batch-size 32
+```
+
+- This step verifies that the processed recovery dataset is not only contract-valid, but can also drive real `g1_29dof_kfa` recovery resets through `MotionCommand`.
+- Treat validation failures as implementation debt and fix them before starting recovery training.
 
 ## 2. Train Paper-Facing Presets
 ```bash

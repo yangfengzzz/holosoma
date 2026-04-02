@@ -108,6 +108,50 @@ class RewardManager:
                 raise ValueError(f"Failed to import function '{func}': {e}") from e
         return func
 
+    def _get_recovery_phase_mask(self) -> torch.Tensor | None:
+        """Return the per-env recovery mask when the environment exposes it.
+
+        Recovery-aware reward phase gating is only relevant for WBT recovery
+        tasks. Other tasks should behave exactly as before.
+        """
+        command_manager = getattr(self.env, "command_manager", None)
+        if command_manager is None:
+            return None
+
+        try:
+            motion_command = command_manager.get_state("motion_command")
+        except Exception:
+            return None
+
+        if motion_command is None or not hasattr(motion_command, "recovery_active_mask"):
+            return None
+
+        recovery_mask = motion_command.recovery_active_mask()
+        if not isinstance(recovery_mask, torch.Tensor):
+            return None
+        if recovery_mask.shape != (self.env.num_envs,):
+            return None
+        return recovery_mask.to(device=self.device, dtype=torch.bool)
+
+    def _phase_weight_mask(self, term_cfg: RewardTermCfg, recovery_mask: torch.Tensor | None) -> torch.Tensor | float:
+        """Return a multiplicative mask for phase-tagged reward terms.
+
+        Terms tagged with `r_mtr` are active only outside recovery, while terms
+        tagged with `r_rc` are active only during recovery. Untagged terms, or
+        terms carrying both tags, remain active in all phases.
+        """
+        if recovery_mask is None:
+            return 1.0
+
+        has_tracking_tag = "r_mtr" in term_cfg.tags
+        has_recovery_tag = "r_rc" in term_cfg.tags
+
+        if has_tracking_tag and not has_recovery_tag:
+            return (~recovery_mask).float()
+        if has_recovery_tag and not has_tracking_tag:
+            return recovery_mask.float()
+        return 1.0
+
     @property
     def active_terms(self) -> list[str]:
         """Names of active reward terms."""
@@ -147,6 +191,7 @@ class RewardManager:
         """
         # Reset computation
         self._reward_buf[:] = 0.0
+        recovery_mask = self._get_recovery_phase_mask()
 
         # Iterate over all reward terms
         for term_name, term_cfg in zip(self._term_names, self._term_cfgs):
@@ -166,6 +211,8 @@ class RewardManager:
                     f"Reward term '{term_name}' returned wrong shape. "
                     f"Expected [{self.env.num_envs}], got {rew_raw.shape}"
                 )
+
+            rew_raw = rew_raw * self._phase_weight_mask(term_cfg, recovery_mask)
 
             # Scale by weight and dt
             rew_scaled = rew_raw * term_cfg.weight * dt

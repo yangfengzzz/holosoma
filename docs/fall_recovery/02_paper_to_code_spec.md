@@ -21,6 +21,14 @@
 - Reward gating and termination hysteresis both consume this shared signal from `MotionCommand`.
 - The default threshold source is `MotionConfig.recovery_shoulder_height_threshold`; paper-facing Ground presets keep this at `1.0`.
 
+## Hybrid Objective
+- Reward phase selection is now explicit in `RewardManager`, not just documented by tags.
+- Terms tagged `r_mtr` are active only while `recovery_active_mask == False`.
+- Terms tagged `r_rc` are active only while `recovery_active_mask == True`.
+- Untagged terms remain active in all phases.
+- Repo paper-parity decision:
+  the recovery preset follows a strict phase switch between motion-tracking (`r_mtr`) and recovery (`r_rc`) terms, matching the paper-facing hybrid-objective interpretation more closely than the previous additive implementation.
+
 ## Recovery Rewards
 - Shoulder-height penalty while recovering
 - XY root drift penalty while recovering

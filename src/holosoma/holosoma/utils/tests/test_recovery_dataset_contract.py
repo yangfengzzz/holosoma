@@ -11,7 +11,8 @@ from holosoma.generate_recovery_dataset import (
     derive_raw_output_path,
     write_recovery_dataset,
 )
-from holosoma.utils.recovery_init_dataset import RecoveryInitDataset
+from holosoma.utils.recovery_init_dataset import RecoveryDatasetMetadata, RecoveryInitDataset
+from holosoma.validate_recovery_dataset import validate_dataset_contract
 
 
 def test_derive_raw_output_path_defaults_to_raw_suffix(tmp_path: Path):
@@ -50,3 +51,28 @@ def test_write_recovery_dataset_persists_metadata(tmp_path: Path):
     assert dataset.metadata.dataset_kind == MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT
     assert dataset.metadata.augmentation_mode == MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION
     assert dataset.metadata.source_path == "raw.npz"
+
+
+def test_validate_dataset_contract_checks_expected_dof_count(tmp_path: Path):
+    output_path = tmp_path / "dataset.npz"
+    metadata = RecoveryDatasetMetadata(
+        dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT,
+        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+        preset="g1_29dof_wbt_recovery_fast_sac",
+        robot_type="g1_29dof",
+        friction_range=(0.3, 1.2),
+        settle_steps=180,
+        seed=7,
+        batch_size=2,
+        num_samples=2,
+    )
+    write_recovery_dataset(
+        output_path,
+        root_states=np.zeros((2, 13), dtype=np.float32),
+        dof_pos=np.zeros((2, 29), dtype=np.float32),
+        dof_vel=np.zeros((2, 29), dtype=np.float32),
+        metadata=metadata,
+    )
+
+    dataset = RecoveryInitDataset(str(output_path), "cpu")
+    validate_dataset_contract(dataset, expected_num_dofs=29)

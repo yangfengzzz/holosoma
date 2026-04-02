@@ -192,7 +192,30 @@ Pass criterion:
 If it fails:
 - fix generator/runtime issues before recovery training
 
-## Stage 7: Recovery Training Smoke
+## Stage 7: Recovery Dataset Validation
+
+Command:
+```bash
+source scripts/source_isaacsim_setup.sh
+python src/holosoma/holosoma/validate_recovery_dataset.py \
+  --exp g1_29dof_wbt_recovery_fast_sac \
+  --dataset-path ./artifacts/recovery_init/g1_ground_v1.npz \
+  --batch-size 32
+```
+
+Expected artifacts:
+- none required
+
+Pass criterion:
+- the validator prints `validated_recovery_dataset`
+- `MotionCommand` can consume the dataset with `sample_probability=1.0`
+- reset root and DOF tensors stay finite for `g1_29dof_kfa`
+
+If it fails:
+- treat it as implementation debt, not training instability
+- fix dataset or reset integration before recovery training
+
+## Stage 8: Recovery Training Smoke
 
 Command:
 ```bash
@@ -219,7 +242,7 @@ If it fails:
 - verify the recovery dataset path first
 - then inspect reset mixing and recovery-init loading
 
-## Stage 8: Recovery Eval On Hard Clip
+## Stage 9: Recovery Eval On Hard Clip
 
 Command:
 ```bash
@@ -241,7 +264,7 @@ Pass criterion:
 If it fails:
 - compare against the stand checkpoint on the same clip before changing rewards
 
-## Stage 9: Recovery Ablations
+## Stage 10: Recovery Ablations
 
 Commands:
 ```bash
