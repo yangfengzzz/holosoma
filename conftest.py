@@ -22,3 +22,7 @@ def pytest_configure(config):
         "markers",
         mark_str("requires_inference", "inference environment"),
     )
+    config.addinivalue_line(
+        "markers",
+        mark_str("parity_smoke", "parity smoke workflows"),
+    )

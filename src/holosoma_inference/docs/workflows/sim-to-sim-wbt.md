@@ -57,6 +57,8 @@ python3 src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29d
     --task.interface lo
 ```
 
+When using the Ground parity harness, copy the ONNX path directly from the generated `run_manifest.yaml` under `artifacts/parity_ground/<preset>/seed_<seed>/`.
+
 ### 3. Initialize Stiff Control Mode
 
 In policy terminal, press `Enter` when prompted. The robot enters stiff control mode and holds its initial pose.

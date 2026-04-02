@@ -30,19 +30,23 @@
 
 ## Phase A Surface
 - The paper-facing stand preset is `exp:g1-29dof-wbt-stand-fast-sac`.
-- Its default motion path is a placeholder released-style Ground clip path:
-  `./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz`
-- That path is intentionally local and replaceable because the released KungFuAthlete dataset is not vendored into this repository.
+- Its default motion path is auto-resolved from the first existing dataset root:
+  `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj`
+  `./datasets/KungFuAthleteBot/org_smoothed_mj`
+- File naming accepts both:
+  `<clip>.npz`
+  `<clip>_mj.npz`
+- The local repo checkout is preferred when it exists because it matches the data layout currently used in this workspace.
 
 ## Supported Motion Path Forms
 - Package data path:
   `holosoma/data/motions/g1_29dof/whole_body_tracking/<clip>.npz`
 - Absolute path:
-  `/data/kungfu/org_smoothed_mj/1317_mj.npz`
+  `/data/kungfu/org_smoothed_mj/1317.npz`
 - Repo-relative or cwd-relative path:
-  `./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz`
+  `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1317.npz`
 
-Holosoma resolves these forms through `resolve_data_file_path()`, so the stand preset can point at a local extracted `org_smoothed_mj` directory without extra code changes.
+Holosoma resolves these forms through `resolve_data_file_path()`, and the Ground parity helper further normalizes the two common local dataset layouts plus both clip filename conventions.
 
 ## Recovery Dataset Contract
 - Raw GRSI dataset:

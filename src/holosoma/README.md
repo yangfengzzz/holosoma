@@ -98,14 +98,14 @@ source scripts/source_isaacsim_setup.sh
 python src/holosoma/holosoma/train_agent.py \
     exp:g1-29dof-wbt-stand-fast-sac \
     logger:wandb \
-    --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz
+    --command.setup_terms.motion_command.params.motion_config.motion_file=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1317.npz
 
 # Recovery parity preset with GRSI resets
 source scripts/source_isaacsim_setup.sh
 python src/holosoma/holosoma/train_agent.py \
     exp:g1-29dof-wbt-recovery-fast-sac \
     logger:wandb \
-    --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz \
+    --command.setup_terms.motion_command.params.motion_config.motion_file=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1317.npz \
     --command.setup_terms.motion_command.params.motion_config.recovery_init_dataset.enabled=True \
     --command.setup_terms.motion_command.params.motion_config.recovery_init_dataset.dataset_path=./artifacts/recovery_init/g1_ground_v1.npz
 
@@ -138,6 +138,16 @@ Paper-facing recovery ablations are also available:
 - `exp:g1-29dof-wbt-recovery-only-fast-sac`
 - `exp:g1-29dof-wbt-recovery-slip3-fast-sac`
 - `exp:g1-29dof-wbt-recovery-slip5-fast-sac`
+
+For reproducible Ground parity validation, generate the suite manifest and per-run artifact layout with:
+
+```bash
+python src/holosoma/holosoma/run_kfa_ground_parity.py \
+    --dataset-root=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj \
+    --output-dir=./artifacts/parity_ground
+```
+
+This helper defaults to seeds `1,2,3` and the full paper-facing preset family, and writes one `run_manifest.yaml` per preset/seed pair.
 
 ---
 
@@ -173,7 +183,7 @@ For released KungFuAthlete Ground parity runs, use clip `1307` as the default ha
 ```bash
 python src/holosoma/holosoma/eval_agent.py \
     --checkpoint=<CHECKPOINT_PATH> \
-    --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1307_mj.npz
+    --command.setup_terms.motion_command.params.motion_config.motion_file=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1307.npz
 ```
 
 ### Cross-Simulator Evaluation (MuJoCo)

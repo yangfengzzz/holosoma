@@ -9,7 +9,21 @@ source scripts/source_isaacsim_setup.sh
 - Training example clip: `1317`
 - Primary hard regression clip: `1307`
 - Optional parity follow-ups: `969`, `0203`
-- Expected dataset root: `./datasets/KungFuAthleteBot/org_smoothed_mj`
+- Preferred dataset root: `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj`
+- Legacy dataset root also supported: `./datasets/KungFuAthleteBot/org_smoothed_mj`
+- Accepted clip filenames: `<clip>.npz` and `<clip>_mj.npz`
+
+## Benchmark Harness
+```bash
+python src/holosoma/holosoma/run_kfa_ground_parity.py \
+  --dataset-root=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj \
+  --output-dir=./artifacts/parity_ground
+```
+
+- Default presets: `stand`, `recovery`, `recovery_only`, `slip3`, `slip5`
+- Default seeds: `1`, `2`, `3`
+- Dry-run is the default and writes `suite_manifest.yaml` plus one `run_manifest.yaml` per preset/seed artifact directory
+- Add `--execute=True` to run local train and same-sim eval steps in sequence
 
 ## 1. Generate Recovery States
 ```bash
@@ -26,14 +40,14 @@ python src/holosoma/holosoma/generate_recovery_dataset.py \
 python src/holosoma/holosoma/train_agent.py \
   exp:g1-29dof-wbt-stand-fast-sac \
   logger:wandb \
-  --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz
+  --command.setup_terms.motion_command.params.motion_config.motion_file=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1317.npz
 ```
 
 ```bash
 python src/holosoma/holosoma/train_agent.py \
   exp:g1-29dof-wbt-recovery-fast-sac \
   logger:wandb \
-  --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1317_mj.npz \
+  --command.setup_terms.motion_command.params.motion_config.motion_file=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1317.npz \
   --command.setup_terms.motion_command.params.motion_config.recovery_init_dataset.enabled=True \
   --command.setup_terms.motion_command.params.motion_config.recovery_init_dataset.dataset_path=./artifacts/recovery_init/g1_ground_v1.npz
 ```
@@ -51,7 +65,7 @@ python src/holosoma/holosoma/eval_agent.py \
   --checkpoint=<checkpoint> \
   --training.headless=True \
   --training.max-eval-steps=300 \
-  --command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/1307_mj.npz
+  --command.setup_terms.motion_command.params.motion_config.motion_file=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1307.npz
 ```
 
 - `eval_agent.py` writes same-sim artifacts under the eval log directory and exports ONNX beside the checkpoint when `training.export_onnx=True`.
@@ -84,7 +98,7 @@ python src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29do
 - Force pure recovery-state resets:
   `--command.setup_terms.motion_command.params.motion_config.recovery_init_dataset.sample_probability=1.0`
 - Swap same-sim regression clip:
-  `--command.setup_terms.motion_command.params.motion_config.motion_file=./datasets/KungFuAthleteBot/org_smoothed_mj/<clip>_mj.npz`
+  `--command.setup_terms.motion_command.params.motion_config.motion_file=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/<clip>.npz`
 
 ## Failure Triage
 - Immediate collapse:
@@ -95,3 +109,9 @@ python src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29do
   verify the exported ONNX came from the exact checkpoint under test and that inference uses `inference:g1-29dof-wbt`
 - Stable standing but poor imitation:
   compare `1307` against `969` and `0203` before changing reward terms
+
+## Remaining Differences From Paper
+- Ground parity workflow is fully packaged, but this shell has not completed a real three-seed IsaacSim plus MuJoCo acceptance run yet.
+  Next action: run `run_kfa_ground_parity.py --execute=True` in an IsaacSim-ready environment and log results from generated manifests.
+- The local KungFuAthleteBot checkout in this workspace contains `1317`, `1307`, and `969`, but not `0203`.
+  Next action: add the missing clip locally if needed, otherwise let the harness record `0203` as unavailable and continue with the available Ground suite.

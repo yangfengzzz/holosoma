@@ -3,15 +3,13 @@
 from dataclasses import replace
 
 from holosoma.config_types.command import CommandManagerCfg, CommandTermCfg, MotionConfig, NoiseToInitialPoseConfig
-
-KFA_RELEASED_MOTION_ROOT = "./datasets/KungFuAthleteBot/org_smoothed_mj"
-KFA_TRAINING_EXAMPLE_CLIP_ID = "1317"
-KFA_PRIMARY_REGRESSION_CLIP_ID = "1307"
-KFA_OPTIONAL_REGRESSION_CLIP_IDS = ("969", "0203")
-
-
-def get_kfa_released_motion_path(clip_id: str) -> str:
-    return f"{KFA_RELEASED_MOTION_ROOT}/{clip_id}_mj.npz"
+from holosoma.utils.kfa_parity import (
+    KFA_OPTIONAL_REGRESSION_CLIP_IDS,
+    KFA_PRIMARY_REGRESSION_CLIP_ID,
+    KFA_RELEASED_MOTION_ROOT_CANDIDATES,
+    KFA_TRAINING_EXAMPLE_CLIP_ID,
+    get_kfa_released_motion_path,
+)
 
 
 kfa_motion_file_placeholder = get_kfa_released_motion_path(KFA_TRAINING_EXAMPLE_CLIP_ID)
@@ -142,7 +140,7 @@ g1_29dof_wbt_stand_command = replace(
 __all__ = [
     "KFA_OPTIONAL_REGRESSION_CLIP_IDS",
     "KFA_PRIMARY_REGRESSION_CLIP_ID",
-    "KFA_RELEASED_MOTION_ROOT",
+    "KFA_RELEASED_MOTION_ROOT_CANDIDATES",
     "KFA_TRAINING_EXAMPLE_CLIP_ID",
     "g1_29dof_wbt_command",
     "g1_29dof_wbt_recovery_command",

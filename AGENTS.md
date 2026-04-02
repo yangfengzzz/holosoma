@@ -32,6 +32,13 @@ python src/holosoma/holosoma/train_agent.py exp:<preset> logger:wandb
 python src/holosoma/holosoma/eval_agent.py --checkpoint=<checkpoint>
 ```
 
+### Ground Parity Harness
+```bash
+python src/holosoma/holosoma/run_kfa_ground_parity.py \
+  --dataset-root=./KungFuAthleteBot/collection_g129dof/org_smoothed_mj \
+  --output-dir=./artifacts/parity_ground
+```
+
 ### Recovery Dataset Generation
 ```bash
 python src/holosoma/holosoma/generate_recovery_dataset.py \
@@ -62,3 +69,4 @@ python src/holosoma/holosoma/generate_recovery_dataset.py \
 - The KungFuAthlete-specific robot key is `robot:g1-29dof-kfa`, backed by `g1_29dof_kfa.{xml,urdf}` while keeping `asset.robot_type="g1_29dof"` for bridge compatibility.
 - The recovery docs live under `docs/fall_recovery/`.
 - Mixed reset-source behavior is owned by `MotionCommand`, not by the environment class directly.
+- The parity harness writes `suite_manifest.yaml` plus per-run manifests under `artifacts/parity_ground/`.

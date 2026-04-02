@@ -35,6 +35,7 @@
 - MuJoCo sim-to-sim result:
 - ONNX export path:
 - Video path:
+- Run manifest path:
 
 ## Notes
 - Main failure mode:
