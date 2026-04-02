@@ -36,6 +36,8 @@
 - File naming accepts both:
   `<clip>.npz`
   `<clip>_mj.npz`
+- Released-style nested clip paths are also supported:
+  `<clip>/<clip>.npz`
 - The local repo checkout is preferred when it exists because it matches the data layout currently used in this workspace.
 
 ## Supported Motion Path Forms
@@ -45,6 +47,8 @@
   `/data/kungfu/org_smoothed_mj/1317.npz`
 - Repo-relative or cwd-relative path:
   `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1317.npz`
+- Released nested path:
+  `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj/1317/1317.npz`
 
 Holosoma resolves these forms through `resolve_data_file_path()`, and the Ground parity helper further normalizes the two common local dataset layouts plus both clip filename conventions.
 

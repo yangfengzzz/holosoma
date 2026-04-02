@@ -208,8 +208,21 @@ g1_29dof_wbt_stand_fast_sac_reward = RewardManagerCfg(
         ),
         "feet_slip_penalty": RewardTermCfg(
             func="holosoma.managers.reward.terms.wbt:feet_slip_penalty",
-            params={"contact_force_threshold": 1.0},
+            params={"contact_force_threshold": 8.0},
             weight=-2.0,
+            tags=["r_mtr", "penalty"],
+        ),
+        "undesired_contacts": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:UndesiredContacts",
+            params={
+                "threshold": 1.0,
+                "undesired_contacts_body_names": (
+                    "^(?!left_foot_contact_point$)(?!right_foot_contact_point$)"
+                    "(?!left_wrist_yaw_link$)(?!right_wrist_yaw_link$)"
+                    "(?!left_ankle_roll_link$)(?!right_ankle_roll_link$).+$"
+                ),
+            },
+            weight=-0.1,
             tags=["r_mtr", "penalty"],
         ),
         "root_orientation_penalty": RewardTermCfg(

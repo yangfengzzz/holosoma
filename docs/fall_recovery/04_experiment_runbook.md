@@ -11,7 +11,7 @@ source scripts/source_isaacsim_setup.sh
 - Optional parity follow-ups: `969`, `0203`
 - Preferred dataset root: `./KungFuAthleteBot/collection_g129dof/org_smoothed_mj`
 - Legacy dataset root also supported: `./datasets/KungFuAthleteBot/org_smoothed_mj`
-- Accepted clip filenames: `<clip>.npz` and `<clip>_mj.npz`
+- Accepted clip layouts: `org_smoothed_mj/<clip>.npz`, `org_smoothed_mj/<clip>_mj.npz`, and released-style `org_smoothed_mj/<clip>/<clip>.npz`
 
 ## Benchmark Harness
 ```bash
@@ -24,6 +24,7 @@ python src/holosoma/holosoma/run_kfa_ground_parity.py \
 - Default seeds: `1`, `2`, `3`
 - Dry-run is the default and writes `suite_manifest.yaml` plus one `run_manifest.yaml` per preset/seed artifact directory
 - Add `--execute=True` to run local train and same-sim eval steps in sequence
+- The suite manifest now records the Ground readiness gate; implementation is only considered complete after one full seed passes stand train, recovery train, same-sim eval, ONNX export, and MuJoCo launch.
 
 ## 1. Generate Recovery States
 ```bash
@@ -75,7 +76,7 @@ python src/holosoma/holosoma/eval_agent.py \
 Terminal 1:
 ```bash
 source scripts/source_mujoco_setup.sh
-python src/holosoma/holosoma/run_sim.py robot:g1-29dof
+python src/holosoma/holosoma/run_sim.py robot:g1-29dof-kfa
 ```
 
 Terminal 2:
@@ -111,7 +112,7 @@ python src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29do
   compare `1307` against `969` and `0203` before changing reward terms
 
 ## Remaining Differences From Paper
-- Ground parity workflow is fully packaged, but this shell has not completed a real three-seed IsaacSim plus MuJoCo acceptance run yet.
-  Next action: run `run_kfa_ground_parity.py --execute=True` in an IsaacSim-ready environment and log results from generated manifests.
+- Ground parity workflow now carries an explicit one-seed readiness gate, but this shell has not completed the real IsaacSim-plus-MuJoCo gate yet.
+  Next action: run `run_kfa_ground_parity.py --execute=True --preset-keys stand recovery --seeds 1` in an IsaacSim-ready environment and log the resulting manifests before broader training.
 - The local KungFuAthleteBot checkout in this workspace contains `1317`, `1307`, and `969`, but not `0203`.
   Next action: add the missing clip locally if needed, otherwise let the harness record `0203` as unavailable and continue with the available Ground suite.

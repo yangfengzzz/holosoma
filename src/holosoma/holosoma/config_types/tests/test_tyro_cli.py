@@ -26,6 +26,9 @@ def test_kfa_stand_experiment_cli_surface():
     assert config.command.setup_terms["motion_command"].params["motion_config"].recovery_shoulder_height_threshold == 1.0
     assert config.reward.terms["motion_relative_body_position_error_exp"].weight == 4.0
     assert config.reward.terms["motion_relative_body_position_error_exp"].tags == ["r_mtr", "tracking"]
+    assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
+    assert "undesired_contacts" in config.reward.terms
+    assert "head_link" not in config.reward.terms["undesired_contacts"].params["undesired_contacts_body_names"]
     assert "recovery_action_rate_penalty" not in config.reward.terms
 
 
@@ -42,6 +45,8 @@ def test_recovery_preset_uses_explicit_grsi_augmentation_mode():
     recovery_cfg = config.command.setup_terms["motion_command"].params["motion_config"].recovery_init_dataset
     assert recovery_cfg.augmentation_mode == "rotation_recombination"
     assert recovery_cfg.dataset_kind == "recovery_init"
+    assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
+    assert "undesired_contacts" in config.reward.terms
 
 
 def test_kfa_released_clip_helpers():

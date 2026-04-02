@@ -33,3 +33,4 @@ def test_kfa_parity_harness_dry_run_writes_suite_manifest(tmp_path):
     assert suite_manifest.exists()
     assert (output_dir / "stand" / "seed_1" / "run_manifest.yaml").exists()
     assert (output_dir / "recovery" / "seed_2" / "run_manifest.yaml").exists()
+    assert "implementation_complete_when: one_seed_end_to_end_passes" in suite_manifest.read_text()

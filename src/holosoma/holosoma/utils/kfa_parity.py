@@ -11,6 +11,7 @@ KFA_RELEASED_MOTION_ROOT_CANDIDATES = (
     "./datasets/KungFuAthleteBot/org_smoothed_mj",
 )
 KFA_RELEASED_MOTION_FILE_SUFFIXES = (".npz", "_mj.npz")
+KFA_RELEASED_MOTION_LAYOUTS = ("flat", "nested")
 
 KFA_TRAINING_EXAMPLE_CLIP_ID = "1317"
 KFA_PRIMARY_REGRESSION_CLIP_ID = "1307"
@@ -47,6 +48,7 @@ class KfaParityClipResolution:
     path: str
     exists: bool
     dataset_root: str
+    layout: str
 
 
 def _candidate_dataset_roots(dataset_root: str | None = None) -> tuple[str, ...]:
@@ -70,15 +72,24 @@ def resolve_kfa_motion_path(clip_id: str, dataset_root: str | None = None, requi
     resolved_root = resolve_kfa_dataset_root(dataset_root=dataset_root, require_exists=require_exists)
     root = Path(resolved_root)
 
-    for suffix in KFA_RELEASED_MOTION_FILE_SUFFIXES:
-        candidate = root / f"{clip_id}{suffix}"
-        if candidate.exists():
-            return str(candidate.resolve())
+    for layout in KFA_RELEASED_MOTION_LAYOUTS:
+        for suffix in KFA_RELEASED_MOTION_FILE_SUFFIXES:
+            candidate = root / f"{clip_id}{suffix}" if layout == "flat" else root / clip_id / f"{clip_id}{suffix}"
+            if candidate.exists():
+                return str(candidate.resolve())
 
     fallback = root / f"{clip_id}{KFA_RELEASED_MOTION_FILE_SUFFIXES[0]}"
     if require_exists:
         raise FileNotFoundError(f"Could not find clip {clip_id} under {resolved_root}")
     return str(fallback.resolve())
+
+
+def detect_kfa_motion_layout(motion_path: str, dataset_root: str) -> str:
+    try:
+        relative = Path(motion_path).resolve().relative_to(Path(dataset_root).resolve())
+    except ValueError:
+        return "external"
+    return "nested" if len(relative.parts) >= 2 else "flat"
 
 
 def get_kfa_released_motion_path(clip_id: str) -> str:
@@ -101,6 +112,7 @@ def resolve_clip_set(
                 path=clip_path,
                 exists=Path(clip_path).exists(),
                 dataset_root=resolved_root,
+                layout=detect_kfa_motion_layout(clip_path, resolved_root),
             )
         )
 
@@ -114,12 +126,14 @@ def resolve_clip_set(
             path=train_path,
             exists=Path(train_path).exists(),
             dataset_root=resolved_root,
+            layout=detect_kfa_motion_layout(train_path, resolved_root),
         ),
         "eval": KfaParityClipResolution(
             clip_id=eval_clip_id,
             path=eval_path,
             exists=Path(eval_path).exists(),
             dataset_root=resolved_root,
+            layout=detect_kfa_motion_layout(eval_path, resolved_root),
         ),
         "optional_eval": optional_clips,
     }
@@ -186,7 +200,7 @@ def build_mujoco_commands(onnx_path: str) -> dict[str, list[str]]:
         "simulator": [
             "python",
             "src/holosoma/holosoma/run_sim.py",
-            "robot:g1-29dof",
+            "robot:g1-29dof-kfa",
         ],
         "policy": [
             "python",

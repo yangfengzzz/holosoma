@@ -148,6 +148,7 @@ python src/holosoma/holosoma/run_kfa_ground_parity.py \
 ```
 
 This helper defaults to seeds `1,2,3` and the full paper-facing preset family, and writes one `run_manifest.yaml` per preset/seed pair.
+The generated `suite_manifest.yaml` also records the one-seed Ground readiness gate; implementation is only considered complete after `stand` and `recovery` both pass train, same-sim eval, ONNX export, and MuJoCo launch.
 
 ---
 

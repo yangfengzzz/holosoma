@@ -27,7 +27,7 @@ In one terminal, launch the MuJoCo environment:
 
 ```bash
 source scripts/source_mujoco_setup.sh
-python src/holosoma/holosoma/run_sim.py robot:g1-29dof
+python src/holosoma/holosoma/run_sim.py robot:g1-29dof-kfa
 ```
 
 The robot will spawn in the simulator, hanging from a gantry.
@@ -58,6 +58,7 @@ python3 src/holosoma_inference/holosoma_inference/run_policy.py inference:g1-29d
 ```
 
 When using the Ground parity harness, copy the ONNX path directly from the generated `run_manifest.yaml` under `artifacts/parity_ground/<preset>/seed_<seed>/`.
+For KungFuAthlete Ground parity, keep the simulator on `robot:g1-29dof-kfa` so the MuJoCo body layout matches the paper-facing training surface.
 
 ### 3. Initialize Stiff Control Mode
 

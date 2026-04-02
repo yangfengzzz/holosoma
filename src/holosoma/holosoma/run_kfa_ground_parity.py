@@ -78,6 +78,17 @@ def main() -> None:
 
     suite_manifest = {
         "suite_name": "kfa_ground_parity",
+        "readiness_gate": {
+            "scope": "ground",
+            "required_train_clip": config.train_clip,
+            "required_eval_clip": config.eval_clip,
+            "required_presets": ["stand", "recovery"],
+            "requires_recovery_dataset_for_recovery": True,
+            "requires_same_sim_eval": True,
+            "requires_onnx_export": True,
+            "requires_mujoco_sim_to_sim_launch": True,
+            "implementation_complete_when": "one_seed_end_to_end_passes",
+        },
         "dataset_root": clip_set["dataset_root"],
         "train_clip": asdict(clip_set["train"]),
         "eval_clip": asdict(clip_set["eval"]),

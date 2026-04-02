@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import dataclasses
 from pathlib import Path
 import random
+import sys
 
 import numpy as np
 
@@ -63,8 +65,8 @@ def build_experiment_config(args: argparse.Namespace):
 
 def derive_raw_output_path(output_path: str, raw_output_path: str | None) -> Path:
     if raw_output_path:
-        return Path(raw_output_path)
-    processed = Path(output_path)
+        return Path(raw_output_path).expanduser().resolve()
+    processed = Path(output_path).expanduser().resolve()
     stem = processed.stem
     suffix = processed.suffix or ".npz"
     return processed.with_name(f"{stem}.raw{suffix}")
@@ -174,6 +176,16 @@ def _quat_from_euler_xyz(roll: torch.Tensor, pitch: torch.Tensor, yaw: torch.Ten
     return quat
 
 
+@contextmanager
+def _isolated_argv() -> None:
+    original_argv = sys.argv[:]
+    try:
+        sys.argv = [sys.argv[0]]
+        yield
+    finally:
+        sys.argv = original_argv
+
+
 def main() -> None:
     init_eval_logging()
     args = parse_args()
@@ -182,7 +194,7 @@ def main() -> None:
     torch.manual_seed(args.seed)
     config = build_experiment_config(args)
     raw_output_path = derive_raw_output_path(args.output_path, args.raw_output_path)
-    processed_output_path = Path(args.output_path)
+    processed_output_path = Path(args.output_path).expanduser().resolve()
 
     collected_root_states: list[np.ndarray] = []
     collected_dof_pos: list[np.ndarray] = []
@@ -190,7 +202,7 @@ def main() -> None:
 
     from holosoma.train_agent import training_context
 
-    with training_context(config):
+    with _isolated_argv(), training_context(config):
         tyro_env_config = get_tyro_env_config(config)
         env = get_class(config.env_class)(tyro_env_config, device="cuda:0" if torch.cuda.is_available() else "cpu")
         env.reset_all()
@@ -209,33 +221,39 @@ def main() -> None:
             collected_dof_pos.append(env.simulator.dof_pos[keep_ids].detach().cpu().numpy())
             collected_dof_vel.append(env.simulator.dof_vel[keep_ids].detach().cpu().numpy())
 
-    root_states = np.concatenate(collected_root_states, axis=0)
-    dof_pos = np.concatenate(collected_dof_pos, axis=0)
-    dof_vel = np.concatenate(collected_dof_vel, axis=0)
+        root_states = np.concatenate(collected_root_states, axis=0)
+        dof_pos = np.concatenate(collected_dof_pos, axis=0)
+        dof_vel = np.concatenate(collected_dof_vel, axis=0)
 
-    raw_metadata = build_dataset_metadata(
-        args=args,
-        config=config,
-        dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RAW_GRSI,
-        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.NONE,
-        num_samples=root_states.shape[0],
-    )
-    processed_metadata = build_dataset_metadata(
-        args=args,
-        config=config,
-        dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT,
-        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode(args.processed_augmentation_mode),
-        num_samples=root_states.shape[0],
-        source_path=str(raw_output_path),
-    )
-    write_recovery_dataset(raw_output_path, root_states=root_states, dof_pos=dof_pos, dof_vel=dof_vel, metadata=raw_metadata)
-    write_recovery_dataset(
-        processed_output_path,
-        root_states=root_states,
-        dof_pos=dof_pos,
-        dof_vel=dof_vel,
-        metadata=processed_metadata,
-    )
+        raw_metadata = build_dataset_metadata(
+            args=args,
+            config=config,
+            dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RAW_GRSI,
+            augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.NONE,
+            num_samples=root_states.shape[0],
+        )
+        processed_metadata = build_dataset_metadata(
+            args=args,
+            config=config,
+            dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT,
+            augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode(args.processed_augmentation_mode),
+            num_samples=root_states.shape[0],
+            source_path=str(raw_output_path),
+        )
+        write_recovery_dataset(
+            raw_output_path,
+            root_states=root_states,
+            dof_pos=dof_pos,
+            dof_vel=dof_vel,
+            metadata=raw_metadata,
+        )
+        write_recovery_dataset(
+            processed_output_path,
+            root_states=root_states,
+            dof_pos=dof_pos,
+            dof_vel=dof_vel,
+            metadata=processed_metadata,
+        )
 
 
 if __name__ == "__main__":

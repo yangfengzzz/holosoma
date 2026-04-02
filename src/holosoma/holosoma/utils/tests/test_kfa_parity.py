@@ -7,8 +7,10 @@ import yaml
 from holosoma.utils.kfa_parity import (
     KFA_OPTIONAL_REGRESSION_CLIP_IDS,
     build_eval_command,
+    build_mujoco_commands,
     build_parity_artifact_dir,
     build_training_command,
+    detect_kfa_motion_layout,
     resolve_clip_set,
     resolve_kfa_dataset_root,
     resolve_kfa_motion_path,
@@ -23,6 +25,18 @@ def test_resolve_kfa_motion_path_prefers_existing_npz(tmp_path):
     resolved = resolve_kfa_motion_path("1317", dataset_root=str(dataset_root), require_exists=True)
 
     assert resolved.endswith("/1317.npz")
+
+
+def test_resolve_kfa_motion_path_supports_nested_layout(tmp_path):
+    dataset_root = tmp_path / "org_smoothed_mj"
+    nested_dir = dataset_root / "1317"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "1317.npz").write_bytes(b"")
+
+    resolved = resolve_kfa_motion_path("1317", dataset_root=str(dataset_root), require_exists=True)
+
+    assert resolved.endswith("/1317/1317.npz")
+    assert detect_kfa_motion_layout(resolved, str(dataset_root)) == "nested"
 
 
 def test_resolve_clip_set_marks_missing_optional_clip(tmp_path):
@@ -63,6 +77,9 @@ def test_build_parity_commands_include_expected_overrides(tmp_path):
     assert "--algo.config.num-learning-iterations=5" in training_command
     assert "--command.setup_terms.motion_command.params.motion_config.recovery_init_dataset.enabled=True" in training_command
     assert "--training.max-eval-steps=12" in eval_command
+    mujoco_commands = build_mujoco_commands("/tmp/model.onnx")
+    assert mujoco_commands["simulator"][-1] == "robot:g1-29dof-kfa"
+    assert "inference:g1-29dof-wbt" in mujoco_commands["policy"]
 
 
 def test_parity_harness_manifest_fields_are_yaml_safe(tmp_path):
