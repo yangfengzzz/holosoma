@@ -225,6 +225,20 @@ g1_29dof_wbt_recovery_fast_sac_reward = RewardManagerCfg(
     }
 )
 
+g1_29dof_wbt_recovery_debug_fast_sac_reward = RewardManagerCfg(
+    terms={
+        **g1_29dof_wbt_recovery_fast_sac_reward.terms,
+        "recovery_xy_root_movement_penalty": replace(
+            g1_29dof_wbt_recovery_fast_sac_reward.terms["recovery_xy_root_movement_penalty"],
+            weight=-0.5,
+        ),
+        "recovery_action_rate_penalty": replace(
+            g1_29dof_wbt_recovery_fast_sac_reward.terms["recovery_action_rate_penalty"],
+            weight=-1.0,
+        ),
+    }
+)
+
 g1_29dof_wbt_recovery_only_fast_sac_reward = _drop_term(
     g1_29dof_wbt_recovery_fast_sac_reward,
     "feet_slip_penalty",
@@ -244,6 +258,7 @@ g1_29dof_wbt_recovery_slip5_fast_sac_reward = _replace_term_weight(
 
 __all__ = [
     "g1_29dof_wbt_fast_sac_reward",
+    "g1_29dof_wbt_recovery_debug_fast_sac_reward",
     "g1_29dof_wbt_recovery_fast_sac_reward",
     "g1_29dof_wbt_recovery_only_fast_sac_reward",
     "g1_29dof_wbt_recovery_slip3_fast_sac_reward",

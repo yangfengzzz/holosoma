@@ -62,7 +62,7 @@ motion_config_recovery = replace(
     enable_default_pose_append=False,
     recovery_shoulder_height_threshold=1.0,
     recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
-        enabled=False,
+        enabled=True,
         dataset_path="./artifacts/recovery_init/g1_ground_v1.npz",
         sample_probability=0.5,
         augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
@@ -85,6 +85,25 @@ motion_config_stand = replace(
     enable_default_pose_prepend=False,
     enable_default_pose_append=False,
     recovery_shoulder_height_threshold=1.0,
+)
+
+motion_config_recovery_debug_base = replace(
+    motion_config_stand,
+    recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
+        enabled=True,
+        dataset_path="./artifacts/recovery_init/g1_ground_v1.npz",
+        sample_probability=0.1,
+        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+        dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT,
+    ),
+)
+
+motion_config_recovery_low_kinetic = replace(
+    motion_config_recovery,
+    recovery_init_dataset=replace(
+        motion_config_recovery.recovery_init_dataset,
+        sample_probability=0.25,
+    ),
 )
 
 g1_29dof_wbt_command = CommandManagerCfg(
@@ -145,6 +164,30 @@ g1_29dof_wbt_stand_command = replace(
     },
 )
 
+g1_29dof_wbt_recovery_debug_base_command = replace(
+    g1_29dof_wbt_command,
+    setup_terms={
+        "motion_command": CommandTermCfg(
+            func="holosoma.managers.command.terms.wbt:MotionCommand",
+            params={
+                "motion_config": motion_config_recovery_debug_base,
+            },
+        )
+    },
+)
+
+g1_29dof_wbt_recovery_low_kinetic_command = replace(
+    g1_29dof_wbt_command,
+    setup_terms={
+        "motion_command": CommandTermCfg(
+            func="holosoma.managers.command.terms.wbt:MotionCommand",
+            params={
+                "motion_config": motion_config_recovery_low_kinetic,
+            },
+        )
+    },
+)
+
 __all__ = [
     "KFA_OPTIONAL_REGRESSION_CLIP_IDS",
     "KFA_PRIMARY_REGRESSION_CLIP_ID",
@@ -152,6 +195,8 @@ __all__ = [
     "KFA_TRAINING_EXAMPLE_CLIP_ID",
     "g1_29dof_wbt_command",
     "g1_29dof_wbt_recovery_command",
+    "g1_29dof_wbt_recovery_debug_base_command",
+    "g1_29dof_wbt_recovery_low_kinetic_command",
     "g1_29dof_wbt_stand_command",
     "g1_29dof_wbt_command_w_object",
     "get_kfa_released_motion_path",

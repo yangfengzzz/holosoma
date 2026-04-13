@@ -453,6 +453,7 @@ class MotionCommand(CommandTermBase):
         if env_ids.numel() == 0:
             return
 
+        self._regular_reset_count += torch.tensor(int(env_ids.numel()), dtype=torch.long, device=self.device)
         self._update_sampling_failures(env_ids)
         self.time_steps[env_ids] = self._sample_reference_timesteps(env_ids)
 
@@ -550,6 +551,8 @@ class MotionCommand(CommandTermBase):
         # 3. Optionally replace reset state with a sampled recovery initialization.
         recovery_mask = self._sample_recovery_reset_mask(env_ids)
         self.last_reset_used_recovery[env_ids] = recovery_mask
+        self._reset_recovery_count += recovery_mask.sum()
+        self._reset_motion_count += (~recovery_mask).sum()
         if recovery_mask.any():
             recovery_env_ids = env_ids[recovery_mask]
             recovery_batch = self.recovery_init_dataset.sample(
@@ -614,6 +617,7 @@ class MotionCommand(CommandTermBase):
         # reset robot/object state without terminating the whole episode.
         ended_env_ids = torch.where(self.time_steps >= self.motion.time_step_total)[0]
         if ended_env_ids.numel() > 0:
+            self._clip_end_reset_count += torch.tensor(int(ended_env_ids.numel()), dtype=torch.long, device=self.device)
             self.reset(ended_env_ids)
             # Flush the mutated root/dof state into the simulator so that
             # rigid-body positions are up-to-date for downstream consumers
@@ -839,6 +843,12 @@ class MotionCommand(CommandTermBase):
     def init_buffers(self):
         self.time_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.last_reset_used_recovery = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self._reset_recovery_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self._reset_motion_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self._terminated_in_recovery_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self._terminated_outside_recovery_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self._clip_end_reset_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self._regular_reset_count = torch.tensor(0, dtype=torch.long, device=self.device)
         self.body_pos_relative_w = torch.zeros(
             self.num_envs, len(self.motion_cfg.body_names_to_track), 3, device=self.device
         )  # type: ignore[arg-type]
@@ -897,7 +907,31 @@ class MotionCommand(CommandTermBase):
             self.metrics["motion/low_kinetic_sampler_top1_anchor_timestep"] = self.low_kinetic_anchor_sampler.metrics[
                 "sampling_top1_anchor_timestep"
             ]
-        self.metrics["motion/reset_recovery_fraction"] = self.last_reset_used_recovery.float().mean()
+        self.metrics["motion/reset_recovery_flag_fraction"] = self.last_reset_used_recovery.float().mean()
+        self.metrics["motion/reset_recovery_count"] = self._reset_recovery_count.float()
+        self.metrics["motion/reset_motion_count"] = self._reset_motion_count.float()
+        total_resets = self._reset_recovery_count + self._reset_motion_count
+        self.metrics["motion/reset_recovery_rate_on_reset"] = (
+            self._reset_recovery_count.float() / total_resets.float()
+            if total_resets.item() > 0
+            else torch.tensor(0.0, device=self.device)
+        )
+        recovery_gap = self.recovery_shoulder_height_gap()
+        self.metrics["motion/recovery_active_fraction"] = self.recovery_active_mask().float().mean()
+        self.metrics["motion/recovery_shoulder_gap_mean"] = recovery_gap.mean()
+        self.metrics["motion/recovery_shoulder_gap_p95"] = torch.quantile(recovery_gap, 0.95)
+        total_terminations = self._terminated_in_recovery_count + self._terminated_outside_recovery_count
+        self.metrics["motion/terminated_in_recovery_fraction"] = (
+            self._terminated_in_recovery_count.float() / total_terminations.float()
+            if total_terminations.item() > 0
+            else torch.tensor(0.0, device=self.device)
+        )
+        total_reset_events = self._regular_reset_count
+        self.metrics["motion/clip_end_reset_fraction"] = (
+            self._clip_end_reset_count.float() / total_reset_events.float()
+            if total_reset_events.item() > 0
+            else torch.tensor(0.0, device=self.device)
+        )
 
     def recovery_active_mask(self, shoulder_height_threshold: float | None = None) -> torch.Tensor:
         threshold = (
@@ -933,6 +967,10 @@ class MotionCommand(CommandTermBase):
         terminated = self._env.termination_manager.terminated[env_ids]
         if not torch.any(terminated):
             return
+        terminated_env_ids = env_ids[terminated]
+        terminated_in_recovery = self.recovery_active_mask()[terminated_env_ids]
+        self._terminated_in_recovery_count += terminated_in_recovery.sum()
+        self._terminated_outside_recovery_count += (~terminated_in_recovery).sum()
         failed_at_time_step = self.time_steps[env_ids][terminated]
         if self.adaptive_timesteps_sampler is not None:
             self.adaptive_timesteps_sampler.update_current_bin_failed_count(failed_at_time_step)

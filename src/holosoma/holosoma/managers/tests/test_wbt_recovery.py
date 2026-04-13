@@ -14,6 +14,7 @@ from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler, MotionC
 from holosoma.managers.reward.terms import wbt as wbt_reward_terms
 from holosoma.managers.termination.terms import wbt as wbt_termination_terms
 from holosoma.config_types.command import MotionConfig, NoiseToInitialPoseConfig
+from holosoma.config_values.experiment import DEFAULTS as EXPERIMENT_DEFAULTS
 from holosoma.utils.recovery_init_dataset import (
     RecoveryDatasetMetadata,
     RecoveryInitDataset,
@@ -532,6 +533,12 @@ def test_motion_command_reset_applies_recovery_batch_to_selected_envs():
     term.device = "cpu"
     term.time_steps = torch.zeros(2, dtype=torch.long)
     term.last_reset_used_recovery = torch.zeros(2, dtype=torch.bool)
+    term._reset_recovery_count = torch.tensor(0, dtype=torch.long)
+    term._reset_motion_count = torch.tensor(0, dtype=torch.long)
+    term._terminated_in_recovery_count = torch.tensor(0, dtype=torch.long)
+    term._terminated_outside_recovery_count = torch.tensor(0, dtype=torch.long)
+    term._clip_end_reset_count = torch.tensor(0, dtype=torch.long)
+    term._regular_reset_count = torch.tensor(0, dtype=torch.long)
     term.motion = SimpleNamespace(time_step_total=4, has_object=False)
     term.init_pose_cfg = NoiseToInitialPoseConfig()
     term.motion_cfg = SimpleNamespace(
@@ -590,3 +597,116 @@ def test_motion_command_reset_applies_recovery_batch_to_selected_envs():
     assert torch.allclose(simulator.robot_root_states[0, :3], torch.tensor([0.1, 0.2, 0.3]))
     assert torch.allclose(simulator.robot_root_states[1, :3], torch.tensor([11.0, 2.0, 3.0]))
     assert torch.allclose(simulator.robot_root_states[1, 3:7], torch.tensor([0.0, 0.0, 0.0, 1.0]))
+
+
+def test_motion_command_recovery_reset_mask_approx_matches_mixed_probability():
+    term = object.__new__(MotionCommand)
+    term.device = "cpu"
+    term.recovery_init_dataset = object()
+    term.motion_cfg = SimpleNamespace(
+        recovery_init_dataset=SimpleNamespace(enabled=True, sample_probability=0.5),
+    )
+    term._env = SimpleNamespace(is_evaluating=False)
+    env_ids = torch.arange(1024, dtype=torch.long)
+
+    torch.manual_seed(0)
+    mask = term._sample_recovery_reset_mask(env_ids)
+
+    assert abs(mask.float().mean().item() - 0.5) < 0.08
+
+
+def test_recovery_reset_is_disabled_during_evaluation():
+    term = object.__new__(MotionCommand)
+    term.device = "cpu"
+    term.recovery_init_dataset = object()
+    term.motion_cfg = SimpleNamespace(
+        recovery_init_dataset=SimpleNamespace(enabled=True, sample_probability=1.0),
+    )
+    term._env = SimpleNamespace(is_evaluating=True)
+    env_ids = torch.arange(8, dtype=torch.long)
+
+    assert not term._sample_recovery_reset_mask(env_ids).any()
+
+
+def test_motion_command_update_metrics_reports_reset_event_rates():
+    term = object.__new__(MotionCommand)
+    term.device = "cpu"
+    term.metrics = {}
+    term.last_reset_used_recovery = torch.tensor([True, False, True, False], dtype=torch.bool)
+    term._reset_recovery_count = torch.tensor(3, dtype=torch.long)
+    term._reset_motion_count = torch.tensor(1, dtype=torch.long)
+    term._terminated_in_recovery_count = torch.tensor(2, dtype=torch.long)
+    term._terminated_outside_recovery_count = torch.tensor(2, dtype=torch.long)
+    term._clip_end_reset_count = torch.tensor(1, dtype=torch.long)
+    term._regular_reset_count = torch.tensor(4, dtype=torch.long)
+    term.adaptive_timesteps_sampler = None
+    term.low_kinetic_anchor_sampler = None
+    term.recovery_active_mask = lambda threshold=None: torch.tensor([True, False, True, False], dtype=torch.bool)
+    term.recovery_shoulder_height_gap = lambda: torch.tensor([0.2, 0.4, 1.4, 1.8], dtype=torch.float32)
+    term.body_pos_relative_w = torch.zeros((4, 2, 3))
+    term.body_quat_relative_w = torch.tensor([[[0.0, 0.0, 0.0, 1.0]] * 2] * 4)
+
+    with patch.object(MotionCommand, "ref_pos_w", new_callable=PropertyMock, return_value=torch.zeros((4, 3))), patch.object(
+        MotionCommand, "robot_ref_pos_w", new_callable=PropertyMock, return_value=torch.zeros((4, 3))
+    ), patch.object(
+        MotionCommand, "ref_quat_w", new_callable=PropertyMock, return_value=torch.tensor([[0.0, 0.0, 0.0, 1.0]] * 4)
+    ), patch.object(
+        MotionCommand, "robot_ref_quat_w", new_callable=PropertyMock, return_value=torch.tensor([[0.0, 0.0, 0.0, 1.0]] * 4)
+    ), patch.object(
+        MotionCommand, "ref_lin_vel_w", new_callable=PropertyMock, return_value=torch.zeros((4, 3))
+    ), patch.object(
+        MotionCommand, "robot_ref_lin_vel_w", new_callable=PropertyMock, return_value=torch.zeros((4, 3))
+    ), patch.object(
+        MotionCommand, "ref_ang_vel_w", new_callable=PropertyMock, return_value=torch.zeros((4, 3))
+    ), patch.object(
+        MotionCommand, "robot_ref_ang_vel_w", new_callable=PropertyMock, return_value=torch.zeros((4, 3))
+    ), patch.object(
+        MotionCommand, "robot_body_pos_w", new_callable=PropertyMock, return_value=torch.zeros((4, 2, 3))
+    ), patch.object(
+        MotionCommand, "robot_body_quat_w", new_callable=PropertyMock, return_value=torch.tensor([[[0.0, 0.0, 0.0, 1.0]] * 2] * 4)
+    ), patch.object(
+        MotionCommand, "body_lin_vel_w", new_callable=PropertyMock, return_value=torch.zeros((4, 2, 3))
+    ), patch.object(
+        MotionCommand, "robot_body_lin_vel_w", new_callable=PropertyMock, return_value=torch.zeros((4, 2, 3))
+    ), patch.object(
+        MotionCommand, "body_ang_vel_w", new_callable=PropertyMock, return_value=torch.zeros((4, 2, 3))
+    ), patch.object(
+        MotionCommand, "robot_body_ang_vel_w", new_callable=PropertyMock, return_value=torch.zeros((4, 2, 3))
+    ), patch.object(
+        MotionCommand, "joint_pos", new_callable=PropertyMock, return_value=torch.zeros((4, 2))
+    ), patch.object(
+        MotionCommand, "robot_joint_pos", new_callable=PropertyMock, return_value=torch.zeros((4, 2))
+    ), patch.object(
+        MotionCommand, "joint_vel", new_callable=PropertyMock, return_value=torch.zeros((4, 2))
+    ), patch.object(
+        MotionCommand, "robot_joint_vel", new_callable=PropertyMock, return_value=torch.zeros((4, 2))
+    ):
+        term.update_metrics()
+
+    assert term.metrics["motion/reset_recovery_flag_fraction"].item() == pytest.approx(0.5)
+    assert term.metrics["motion/reset_recovery_rate_on_reset"].item() == pytest.approx(0.75)
+    assert term.metrics["motion/reset_recovery_count"].item() == 3.0
+    assert term.metrics["motion/reset_motion_count"].item() == 1.0
+    assert term.metrics["motion/terminated_in_recovery_fraction"].item() == pytest.approx(0.5)
+    assert term.metrics["motion/clip_end_reset_fraction"].item() == pytest.approx(0.25)
+
+
+def test_recovery_debug_and_low_kinetic_presets_are_staged_from_recovery():
+    debug_cfg = EXPERIMENT_DEFAULTS["g1_29dof_wbt_recovery_debug_base_fast_sac"]
+    low_kinetic_cfg = EXPERIMENT_DEFAULTS["g1_29dof_wbt_recovery_low_kinetic_fast_sac"]
+    full_cfg = EXPERIMENT_DEFAULTS["g1_29dof_wbt_recovery_fast_sac"]
+
+    debug_motion_cfg = debug_cfg.command.setup_terms["motion_command"].params["motion_config"]
+    low_kinetic_motion_cfg = low_kinetic_cfg.command.setup_terms["motion_command"].params["motion_config"]
+    full_motion_cfg = full_cfg.command.setup_terms["motion_command"].params["motion_config"]
+
+    assert debug_motion_cfg.sampling_strategy == MotionConfig.MotionSamplingStrategy.UNIFORM
+    assert debug_motion_cfg.start_at_timestep_zero_prob == 0.0
+    assert debug_motion_cfg.freeze_at_timestep_zero_prob == 0.0
+    assert debug_motion_cfg.recovery_init_dataset.enabled is True
+    assert debug_motion_cfg.recovery_init_dataset.sample_probability == pytest.approx(0.1)
+    assert low_kinetic_motion_cfg.sampling_strategy == MotionConfig.MotionSamplingStrategy.LOW_KINETIC
+    assert low_kinetic_motion_cfg.recovery_init_dataset.enabled is True
+    assert low_kinetic_motion_cfg.recovery_init_dataset.sample_probability == pytest.approx(0.25)
+    assert full_motion_cfg.recovery_init_dataset.enabled is True
+    assert full_motion_cfg.recovery_init_dataset.sample_probability == pytest.approx(0.5)

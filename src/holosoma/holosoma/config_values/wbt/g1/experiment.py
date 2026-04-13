@@ -213,6 +213,26 @@ g1_29dof_wbt_recovery_fast_sac = replace(
     reward=reward.g1_29dof_wbt_recovery_fast_sac_reward,
 )
 
+g1_29dof_wbt_recovery_debug_base_fast_sac = replace(
+    g1_29dof_wbt_recovery_fast_sac,
+    training=replace(
+        g1_29dof_wbt_recovery_fast_sac.training,
+        name="g1_29dof_wbt_recovery_debug_base_fast_sac_manager",
+    ),
+    command=command.g1_29dof_wbt_recovery_debug_base_command,
+    reward=reward.g1_29dof_wbt_recovery_debug_fast_sac_reward,
+)
+
+g1_29dof_wbt_recovery_low_kinetic_fast_sac = replace(
+    g1_29dof_wbt_recovery_fast_sac,
+    training=replace(
+        g1_29dof_wbt_recovery_fast_sac.training,
+        name="g1_29dof_wbt_recovery_low_kinetic_fast_sac_manager",
+    ),
+    command=command.g1_29dof_wbt_recovery_low_kinetic_command,
+    reward=reward.g1_29dof_wbt_recovery_debug_fast_sac_reward,
+)
+
 g1_29dof_wbt_recovery_only_fast_sac = replace(
     g1_29dof_wbt_recovery_fast_sac,
     training=replace(
@@ -264,7 +284,9 @@ g1_29dof_wbt_stand_fast_sac = replace(
 __all__ = [
     "g1_29dof_wbt",
     "g1_29dof_wbt_fast_sac",
+    "g1_29dof_wbt_recovery_debug_base_fast_sac",
     "g1_29dof_wbt_recovery_fast_sac",
+    "g1_29dof_wbt_recovery_low_kinetic_fast_sac",
     "g1_29dof_wbt_recovery_only_fast_sac",
     "g1_29dof_wbt_recovery_slip3_fast_sac",
     "g1_29dof_wbt_recovery_slip5_fast_sac",
