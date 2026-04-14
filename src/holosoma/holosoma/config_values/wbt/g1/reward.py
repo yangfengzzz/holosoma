@@ -16,6 +16,12 @@ def _drop_term(cfg: RewardManagerCfg, term_name: str) -> RewardManagerCfg:
     terms.pop(term_name, None)
     return RewardManagerCfg(terms=terms)
 
+
+def _add_or_replace_term(cfg: RewardManagerCfg, term_name: str, term_cfg: RewardTermCfg) -> RewardManagerCfg:
+    terms = dict(cfg.terms)
+    terms[term_name] = term_cfg
+    return RewardManagerCfg(terms=terms)
+
 g1_29dof_wbt_reward = RewardManagerCfg(
     terms={
         # Motion tracking rewards - global reference frame
@@ -256,7 +262,95 @@ g1_29dof_wbt_recovery_slip5_fast_sac_reward = _replace_term_weight(
     -5.0,
 )
 
+g1_29dof_kfa_release_stage_base_fast_sac_reward = RewardManagerCfg(
+    terms={
+        "motion_global_ref_position_error_exp": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_global_ref_position_error_exp",
+            params={"sigma": 0.3},
+            weight=0.5,
+        ),
+        "motion_global_ref_orientation_error_exp": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_global_ref_orientation_error_exp",
+            params={"sigma": 0.4},
+            weight=0.5,
+        ),
+        "motion_relative_body_position_error_exp": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_relative_body_position_error_exp",
+            params={"sigma": 0.3},
+            weight=1.0,
+        ),
+        "motion_relative_body_orientation_error_exp": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_relative_body_orientation_error_exp",
+            params={"sigma": 0.4},
+            weight=1.0,
+        ),
+        "motion_global_body_lin_vel": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_global_body_lin_vel",
+            params={"sigma": 1.0},
+            weight=1.0,
+        ),
+        "motion_global_body_ang_vel": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:motion_global_body_ang_vel",
+            params={"sigma": 3.14},
+            weight=1.0,
+        ),
+        "action_rate_l2": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:penalty_action_rate",
+            weight=-0.1,
+        ),
+        "limits_dof_pos": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:limits_dof_pos",
+            params={"soft_dof_pos_limit": 0.9},
+            weight=-10.0,
+        ),
+        "undesired_contacts": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:UndesiredContacts",
+            params={
+                "threshold": 1.0,
+                "undesired_contacts_body_names": (
+                    "^(?!left_foot_contact_point$)(?!right_foot_contact_point$)"
+                    "(?!left_wrist_yaw_link$)(?!right_wrist_yaw_link$)"
+                    "(?!left_ankle_roll_link$)(?!right_ankle_roll_link$).+$"
+                ),
+            },
+            weight=-0.1,
+        ),
+        "recovery_relative_shoulder_height_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:recovery_relative_shoulder_height_penalty",
+            params={"shoulder_height_threshold": None},
+            weight=-2.0,
+        ),
+        "root_orientation_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:root_orientation_penalty",
+            weight=-0.5,
+        ),
+        "recovery_xy_root_movement_penalty": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:recovery_xy_root_movement_penalty",
+            params={"shoulder_height_threshold": None},
+            weight=-1.0,
+        ),
+    }
+)
+
+g1_29dof_kfa_1307_stage1_fast_sac_reward = g1_29dof_kfa_release_stage_base_fast_sac_reward
+
+g1_29dof_kfa_1307_stage2_fast_sac_reward = _add_or_replace_term(
+    g1_29dof_kfa_release_stage_base_fast_sac_reward,
+    "reward_center_of_mass",
+    RewardTermCfg(
+        func="holosoma.managers.reward.terms.wbt:motion_com_support_alignment_exp",
+        params={"sigma": 0.1, "contact_force_threshold": 1.0},
+        weight=1.0,
+    ),
+)
+
+g1_29dof_kfa_1307_stage3_fast_sac_reward = g1_29dof_kfa_1307_stage2_fast_sac_reward
+
 __all__ = [
+    "g1_29dof_kfa_1307_stage1_fast_sac_reward",
+    "g1_29dof_kfa_1307_stage2_fast_sac_reward",
+    "g1_29dof_kfa_1307_stage3_fast_sac_reward",
+    "g1_29dof_kfa_release_stage_base_fast_sac_reward",
     "g1_29dof_wbt_fast_sac_reward",
     "g1_29dof_wbt_recovery_debug_fast_sac_reward",
     "g1_29dof_wbt_recovery_fast_sac_reward",

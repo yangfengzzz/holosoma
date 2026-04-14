@@ -281,7 +281,57 @@ g1_29dof_wbt_stand_fast_sac = replace(
     reward=reward.g1_29dof_wbt_stand_fast_sac_reward,
 )
 
+g1_29dof_kfa_1307_stage1_fast_sac = replace(
+    g1_29dof_wbt_fast_sac,
+    training=replace(
+        g1_29dof_wbt_fast_sac.training,
+        project="WholeBodyTrackingReleaseParity",
+        name="g1_29dof_kfa_1307_stage1_fast_sac_manager",
+    ),
+    robot=replace(
+        robot.g1_29dof_kfa,
+        control=replace(
+            robot.g1_29dof_kfa.control,
+            action_scale=0.25,
+            action_scales_by_effort_limit_over_p_gain=True,
+        ),
+        asset=replace(robot.g1_29dof_kfa.asset, enable_self_collisions=True),
+        init_state=replace(robot.g1_29dof_kfa.init_state, pos=[0.0, 0.0, 0.76]),
+    ),
+    command=command.g1_29dof_kfa_1307_stage1_command,
+    termination=termination.g1_29dof_kfa_1307_stage1_termination,
+    randomization=randomization.g1_29dof_kfa_1307_stage1_randomization,
+    reward=reward.g1_29dof_kfa_1307_stage1_fast_sac_reward,
+)
+
+g1_29dof_kfa_1307_stage2_fast_sac = replace(
+    g1_29dof_kfa_1307_stage1_fast_sac,
+    training=replace(
+        g1_29dof_kfa_1307_stage1_fast_sac.training,
+        name="g1_29dof_kfa_1307_stage2_fast_sac_manager",
+    ),
+    command=command.g1_29dof_kfa_1307_stage2_command,
+    termination=termination.g1_29dof_kfa_1307_stage2_termination,
+    randomization=randomization.g1_29dof_kfa_1307_stage2_randomization,
+    reward=reward.g1_29dof_kfa_1307_stage2_fast_sac_reward,
+)
+
+g1_29dof_kfa_1307_stage3_fast_sac = replace(
+    g1_29dof_kfa_1307_stage2_fast_sac,
+    training=replace(
+        g1_29dof_kfa_1307_stage2_fast_sac.training,
+        name="g1_29dof_kfa_1307_stage3_fast_sac_manager",
+    ),
+    command=command.g1_29dof_kfa_1307_stage3_command,
+    termination=termination.g1_29dof_kfa_1307_stage3_termination,
+    randomization=randomization.g1_29dof_kfa_1307_stage3_randomization,
+    reward=reward.g1_29dof_kfa_1307_stage3_fast_sac_reward,
+)
+
 __all__ = [
+    "g1_29dof_kfa_1307_stage1_fast_sac",
+    "g1_29dof_kfa_1307_stage2_fast_sac",
+    "g1_29dof_kfa_1307_stage3_fast_sac",
     "g1_29dof_wbt",
     "g1_29dof_wbt_fast_sac",
     "g1_29dof_wbt_recovery_debug_base_fast_sac",

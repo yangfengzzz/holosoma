@@ -98,8 +98,10 @@ class MotionConfig:
 
     # motion sampling related
     class MotionSamplingStrategy(str, Enum):
+        START = "start"
         UNIFORM = "uniform"
         ADAPTIVE = "adaptive"
+        LKE = "lke"
         LOW_KINETIC = "low_kinetic"
 
     use_adaptive_timesteps_sampler: bool = False
@@ -158,6 +160,18 @@ class MotionConfig:
 
     low_kinetic_sampling: LowKineticSamplingConfig = field(default_factory=LowKineticSamplingConfig)
     """Configuration for low-kinetic-energy anchor sampling."""
+
+    reset_mode_weights: tuple[float, float] = (1.0, 0.0)
+    """Relative sampling weights for (tracking_like, standing_like) reset branches."""
+
+    standing_like_reset_enabled: bool = False
+    """Whether a release-parity standing-like reset branch should be sampled on reset."""
+
+    standing_like_reset_joint_noise_scale: float = 0.0
+    """Extra scale multiplier applied to joint reset noise for standing-like resets."""
+
+    standing_like_reset_root_noise_scale: float = 0.0
+    """Extra scale multiplier applied to root reset noise for standing-like resets."""
 
     @dataclass(frozen=True)
     class RecoveryInitDatasetConfig:

@@ -5,6 +5,9 @@ from holosoma.config_types.experiment import ExperimentConfig
 from holosoma.config_values.loco.g1.experiment import g1_29dof, g1_29dof_fast_sac
 from holosoma.config_values.loco.t1.experiment import t1_29dof, t1_29dof_fast_sac
 from holosoma.config_values.wbt.g1.experiment import (
+    g1_29dof_kfa_1307_stage1_fast_sac,
+    g1_29dof_kfa_1307_stage2_fast_sac,
+    g1_29dof_kfa_1307_stage3_fast_sac,
     g1_29dof_wbt,
     g1_29dof_wbt_fast_sac,
     g1_29dof_wbt_fast_sac_w_object,
@@ -23,6 +26,9 @@ DEFAULTS = {
     "g1_29dof_fast_sac": g1_29dof_fast_sac,
     "t1_29dof": t1_29dof,
     "t1_29dof_fast_sac": t1_29dof_fast_sac,
+    "g1_29dof_kfa_1307_stage1_fast_sac": g1_29dof_kfa_1307_stage1_fast_sac,
+    "g1_29dof_kfa_1307_stage2_fast_sac": g1_29dof_kfa_1307_stage2_fast_sac,
+    "g1_29dof_kfa_1307_stage3_fast_sac": g1_29dof_kfa_1307_stage3_fast_sac,
     "g1_29dof_wbt": g1_29dof_wbt,
     "g1_29dof_wbt_w_object": g1_29dof_wbt_w_object,
     "g1_29dof_wbt_fast_sac": g1_29dof_wbt_fast_sac,

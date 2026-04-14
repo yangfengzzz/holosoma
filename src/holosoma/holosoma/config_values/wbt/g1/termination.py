@@ -1,5 +1,6 @@
 """Whole Body Tracking termination presets for the G1 robot."""
 
+import math
 from dataclasses import replace
 
 from holosoma.config_types.termination import TerminationManagerCfg, TerminationTermCfg
@@ -65,7 +66,94 @@ g1_29dof_wbt_recovery_termination = TerminationManagerCfg(
 
 g1_29dof_wbt_stand_termination = replace(g1_29dof_wbt_termination)
 
+_release_stage_base_predicates = [
+    {
+        "name": "anchor_pos_z",
+        "kind": "anchor_pos",
+        "params": {"threshold": 0.25, "z_only": True},
+    },
+    {
+        "name": "anchor_ori",
+        "kind": "anchor_ori",
+        "params": {"threshold": 0.8},
+    },
+    {
+        "name": "ee_body_pos_z",
+        "kind": "motion_body_pos",
+        "params": {
+            "threshold": 0.25,
+            "body_names": [
+                "left_ankle_roll_link",
+                "right_ankle_roll_link",
+                "left_wrist_yaw_link",
+                "right_wrist_yaw_link",
+            ],
+            "z_only": True,
+        },
+    },
+]
+
+g1_29dof_kfa_1307_stage1_termination = TerminationManagerCfg(
+    terms={
+        "timeout": g1_29dof_wbt_termination.terms["timeout"],
+        "bad_tracking": TerminationTermCfg(
+            func="holosoma.managers.termination.terms.wbt:ReleaseParityTolerantTracking",
+            params={
+                "bad_tracking_time_threshold_s": 3.0,
+                "predicate_specs": [
+                    {
+                        **_release_stage_base_predicates[0],
+                        "params": {"threshold": 0.5, "z_only": True},
+                    },
+                    _release_stage_base_predicates[1],
+                    {
+                        **_release_stage_base_predicates[2],
+                        "params": {
+                            **_release_stage_base_predicates[2]["params"],
+                            "threshold": 0.4,
+                        },
+                    },
+                ],
+            },
+        ),
+    }
+)
+
+g1_29dof_kfa_1307_stage2_termination = TerminationManagerCfg(
+    terms={
+        "timeout": g1_29dof_wbt_termination.terms["timeout"],
+        "bad_tracking": TerminationTermCfg(
+            func="holosoma.managers.termination.terms.wbt:ReleaseParityTolerantTracking",
+            params={
+                "bad_tracking_time_threshold_s": 3.0,
+                "predicate_specs": [
+                    {
+                        "name": "anchor_ori",
+                        "kind": "anchor_ori",
+                        "params": {"threshold": 0.6},
+                    },
+                    {
+                        "name": "anchor_pos",
+                        "kind": "anchor_pos",
+                        "params": {"threshold": 1.0, "z_only": False},
+                    },
+                    {
+                        "name": "hip_dof",
+                        "kind": "hip_dof",
+                        "params": {"threshold": math.pi / 6},
+                    },
+                ],
+            },
+        ),
+    }
+)
+
+g1_29dof_kfa_1307_stage3_termination = g1_29dof_kfa_1307_stage2_termination
+
 __all__ = [
+    "g1_29dof_kfa_1307_stage1_termination",
+    "g1_29dof_kfa_1307_stage2_termination",
+    "g1_29dof_kfa_1307_stage3_termination",
     "g1_29dof_wbt_recovery_termination",
     "g1_29dof_wbt_stand_termination",
     "g1_29dof_wbt_termination",

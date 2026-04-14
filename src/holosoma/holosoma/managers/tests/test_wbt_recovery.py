@@ -10,7 +10,7 @@ import torch
 
 from holosoma.config_types.command import CommandTermCfg
 from holosoma.config_types.termination import TerminationTermCfg
-from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler, MotionCommand
+from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler, MotionCommand, ReleaseLowKineticEnergySampler
 from holosoma.managers.reward.terms import wbt as wbt_reward_terms
 from holosoma.managers.termination.terms import wbt as wbt_termination_terms
 from holosoma.config_types.command import MotionConfig, NoiseToInitialPoseConfig
@@ -51,6 +51,33 @@ def test_low_kinetic_anchor_sampler_extracts_and_updates_weights():
     assert sampler.anchor_weights.tolist() == pytest.approx([1.0, 1.5, 1.0, 1.5])
     sampler.update_failed_timesteps(torch.tensor([5], dtype=torch.long))
     assert sampler.anchor_weights.tolist() == pytest.approx([1.0, 1.5, 1.5, 1.5])
+
+
+def test_release_low_kinetic_energy_sampler_prefers_low_energy_frames():
+    joint_vel = torch.tensor([[0.0], [2.0], [0.1]], dtype=torch.float32)
+    body_lin_vel = torch.tensor(
+        [
+            [[0.0, 0.0, 0.0]],
+            [[1.0, 0.0, 0.0]],
+            [[0.1, 0.0, 0.0]],
+        ],
+        dtype=torch.float32,
+    )
+    body_ang_vel = torch.tensor(
+        [
+            [[0.0, 0.0, 0.0]],
+            [[1.0, 0.0, 0.0]],
+            [[0.1, 0.0, 0.0]],
+        ],
+        dtype=torch.float32,
+    )
+
+    sampler = ReleaseLowKineticEnergySampler(joint_vel, body_lin_vel, body_ang_vel, "cpu")
+    probs = sampler.sampling_probabilities
+
+    assert probs.shape == (3,)
+    assert torch.isclose(probs.sum(), torch.tensor(1.0), atol=1e-6)
+    assert probs[0].item() > probs[1].item()
 
 
 def test_recovery_dataset_sampling_and_augmentation_modes(tmp_path):
@@ -364,6 +391,44 @@ def test_recovery_aware_bad_tracking_hysteresis():
     assert second.tolist() == [True, True]
 
 
+def test_release_parity_tolerant_tracking_uses_grace_window_only_for_standing_tasks():
+    motion_command = SimpleNamespace(
+        is_standing_task=torch.tensor([True, False], dtype=torch.bool),
+        ref_pos_w=torch.zeros((2, 3), dtype=torch.float32),
+        robot_ref_pos_w=torch.tensor([[0.6, 0.0, 0.0], [0.6, 0.0, 0.0]], dtype=torch.float32),
+        ref_quat_w=torch.tensor([[0.0, 0.0, 0.0, 1.0]] * 2, dtype=torch.float32),
+        robot_ref_quat_w=torch.tensor([[0.0, 0.0, 0.0, 1.0]] * 2, dtype=torch.float32),
+        body_pos_relative_w=torch.zeros((2, 1, 3), dtype=torch.float32),
+        robot_body_pos_w=torch.zeros((2, 1, 3), dtype=torch.float32),
+        joint_pos=torch.zeros((2, 8), dtype=torch.float32),
+        robot_joint_pos=torch.zeros((2, 8), dtype=torch.float32),
+        motion_cfg=SimpleNamespace(body_names_to_track=["left_ankle_roll_link"]),
+    )
+    env = SimpleNamespace(
+        num_envs=2,
+        device="cpu",
+        dt=0.1,
+        extras={"log": {}},
+        command_manager=SimpleNamespace(get_state=lambda name: motion_command),
+    )
+    cfg = TerminationTermCfg(
+        func="unused",
+        params={
+            "bad_tracking_time_threshold_s": 0.2,
+            "predicate_specs": [
+                {"name": "anchor_pos", "kind": "anchor_pos", "params": {"threshold": 0.5}},
+            ],
+        },
+    )
+    term = wbt_termination_terms.ReleaseParityTolerantTracking(cfg, env)
+
+    first = term(env)
+    second = term(env)
+
+    assert first.tolist() == [False, True]
+    assert second.tolist() == [True, True]
+
+
 def test_bad_tracking_orientation_uses_radian_quaternion_error():
     motion_command = SimpleNamespace(
         motion_cfg=SimpleNamespace(body_names_to_track=["left_ankle_roll_link"]),
@@ -511,6 +576,24 @@ def test_motion_command_recovery_reset_mask_respects_sample_probability_extremes
     assert term._sample_recovery_reset_mask(env_ids).all()
 
 
+def test_motion_command_standing_like_reset_mask_uses_reset_mode_weights():
+    term = object.__new__(MotionCommand)
+    term.device = "cpu"
+    term.recovery_init_dataset = object()
+    term.motion_cfg = SimpleNamespace(
+        standing_like_reset_enabled=True,
+        reset_mode_weights=(1.0, 3.0),
+        recovery_init_dataset=SimpleNamespace(enabled=True),
+    )
+    term._env = SimpleNamespace(is_evaluating=False)
+    env_ids = torch.tensor([0, 1, 2], dtype=torch.long)
+
+    with patch("torch.rand", return_value=torch.tensor([0.2, 0.8, 0.7], dtype=torch.float32)):
+        mask = term._sample_standing_like_reset_mask(env_ids)
+
+    assert mask.tolist() == [True, False, True]
+
+
 def test_motion_command_recovery_reset_mask_uses_random_draws_for_mixed_probability():
     term = object.__new__(MotionCommand)
     term.device = "cpu"
@@ -570,6 +653,8 @@ def test_motion_command_reset_applies_recovery_batch_to_selected_envs():
 
     with patch.object(MotionCommand, "_update_sampling_failures", return_value=None), patch.object(
         MotionCommand, "_sample_reference_timesteps", return_value=torch.zeros(2, dtype=torch.long)
+    ), patch.object(
+        MotionCommand, "_sample_standing_like_reset_mask", return_value=torch.tensor([False, False], dtype=torch.bool)
     ), patch.object(
         MotionCommand, "_sample_recovery_reset_mask", return_value=torch.tensor([False, True], dtype=torch.bool)
     ), patch.object(
@@ -641,6 +726,8 @@ def test_motion_command_update_metrics_reports_reset_event_rates():
     term._regular_reset_count = torch.tensor(4, dtype=torch.long)
     term.adaptive_timesteps_sampler = None
     term.low_kinetic_anchor_sampler = None
+    term.release_lke_sampler = None
+    term.is_standing_task = torch.tensor([True, False, True, False], dtype=torch.bool)
     term.recovery_active_mask = lambda threshold=None: torch.tensor([True, False, True, False], dtype=torch.bool)
     term.recovery_shoulder_height_gap = lambda: torch.tensor([0.2, 0.4, 1.4, 1.8], dtype=torch.float32)
     term.body_pos_relative_w = torch.zeros((4, 2, 3))

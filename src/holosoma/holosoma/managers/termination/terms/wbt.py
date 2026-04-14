@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, List
 
 from holosoma.config_types.termination import TerminationTermCfg
@@ -19,6 +20,62 @@ def motion_ends(env, **_) -> torch.Tensor:
     """Terminate if the motion ends."""
     motion_command = env.command_manager.get_state("motion_command")
     return motion_command.time_steps >= motion_command.motion.time_step_total - 2
+
+
+def bad_anchor_pos(
+    env: WholeBodyTrackingManager,
+    threshold: float,
+    z_only: bool = False,
+) -> torch.Tensor:
+    motion_command = env.command_manager.get_state("motion_command")
+    diff = motion_command.ref_pos_w - motion_command.robot_ref_pos_w
+    if z_only:
+        return torch.abs(diff[:, 2]) > threshold
+    return torch.norm(diff, dim=1) > threshold
+
+
+def bad_anchor_ori(
+    env: WholeBodyTrackingManager,
+    threshold: float,
+) -> torch.Tensor:
+    motion_command = env.command_manager.get_state("motion_command")
+    return quat_error_magnitude(motion_command.ref_quat_w, motion_command.robot_ref_quat_w) > threshold
+
+
+def bad_motion_body_pos(
+    env: WholeBodyTrackingManager,
+    threshold: float,
+    body_names: list[str] | None = None,
+    z_only: bool = False,
+) -> torch.Tensor:
+    motion_command = env.command_manager.get_state("motion_command")
+    tracked_names = motion_command.motion_cfg.body_names_to_track
+    if body_names:
+        body_indexes = torch.tensor([tracked_names.index(name) for name in body_names], device=env.device, dtype=torch.long)
+    else:
+        body_indexes = torch.arange(len(tracked_names), device=env.device, dtype=torch.long)
+    if z_only:
+        error = torch.abs(
+            motion_command.body_pos_relative_w[:, body_indexes, 2] - motion_command.robot_body_pos_w[:, body_indexes, 2]
+        )
+    else:
+        error = torch.norm(
+            motion_command.body_pos_relative_w[:, body_indexes] - motion_command.robot_body_pos_w[:, body_indexes], dim=-1
+        )
+    return torch.any(error > threshold, dim=-1)
+
+
+def bad_hip_dof(
+    env: WholeBodyTrackingManager,
+    threshold: float,
+    joint_indices: list[int] | None = None,
+) -> torch.Tensor:
+    motion_command = env.command_manager.get_state("motion_command")
+    hip_joint_indices = joint_indices or [0, 1, 2, 6, 7, 8]
+    error = torch.abs(
+        motion_command.joint_pos[:, hip_joint_indices] - motion_command.robot_joint_pos[:, hip_joint_indices]
+    )
+    return torch.any(error > threshold, dim=-1)
 
 
 class BadTracking(TerminationTermBase):
@@ -160,3 +217,69 @@ class RecoveryAwareBadTracking(BadTracking):
             self._recovery_bad_tracking_counter.zero_()
         else:
             self._recovery_bad_tracking_counter[env_ids] = 0
+
+
+class ReleaseParityTolerantTracking(TerminationTermBase):
+    """Release-style tolerant bad-tracking term with standing-task grace window."""
+
+    _PREDICATE_MAP = {
+        "anchor_pos": bad_anchor_pos,
+        "anchor_ori": bad_anchor_ori,
+        "motion_body_pos": bad_motion_body_pos,
+        "hip_dof": bad_hip_dof,
+    }
+
+    def __init__(self, cfg: TerminationTermCfg, env: WholeBodyTrackingManager):
+        super().__init__(cfg, env)
+        self.bad_tracking_time_threshold_s = float(cfg.params["bad_tracking_time_threshold_s"])
+        self.predicate_specs = list(cfg.params["predicate_specs"])
+        self.bad_tracking_episode_length = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+        self.final_trigger_mask = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self.last_triggered_terms: dict[str, torch.Tensor] = {}
+
+    def __call__(self, env: Any, **kwargs) -> torch.Tensor:
+        motion_command = self.env.command_manager.get_state("motion_command")
+        standing_mask = getattr(
+            motion_command,
+            "is_standing_task",
+            torch.ones(self.env.num_envs, dtype=torch.bool, device=self.env.device),
+        )
+        combined_bad = torch.zeros(self.env.num_envs, dtype=torch.bool, device=self.env.device)
+        for spec in self.predicate_specs:
+            name = spec["name"]
+            kind = spec["kind"]
+            params = dict(spec.get("params", {}))
+            raw_bad = self._PREDICATE_MAP[kind](self.env, **params)
+            self.last_triggered_terms[name] = raw_bad
+            combined_bad |= raw_bad
+
+        max_bad_steps = max(1, math.ceil(self.bad_tracking_time_threshold_s / self.env.dt))
+        self.bad_tracking_episode_length = torch.where(
+            combined_bad,
+            self.bad_tracking_episode_length + 1,
+            torch.zeros_like(self.bad_tracking_episode_length),
+        )
+        self.final_trigger_mask = torch.where(
+            standing_mask,
+            self.bad_tracking_episode_length >= max_bad_steps,
+            combined_bad,
+        )
+        return self.final_trigger_mask
+
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
+        target_ids = slice(None) if env_ids is None else env_ids
+        if env_ids is None:
+            self.bad_tracking_episode_length.zero_()
+            mask = self.final_trigger_mask
+        else:
+            self.bad_tracking_episode_length[env_ids] = 0
+            mask = self.final_trigger_mask[env_ids]
+
+        extras = getattr(self.env, "extras", None)
+        if isinstance(extras, dict):
+            log_dict = extras.setdefault("log", {})
+            for name, value in self.last_triggered_terms.items():
+                count = torch.count_nonzero(value[target_ids] & mask).item()
+                extras[f"Episode_Termination/ReleaseParityTolerantTracking/{name}"] = count
+                if isinstance(log_dict, dict):
+                    log_dict[f"Episode_Termination/ReleaseParityTolerantTracking/{name}"] = count

@@ -1,5 +1,7 @@
 """Whole Body Tracking randomization presets for the G1 robot."""
 
+from dataclasses import replace
+
 from holosoma.config_types.randomization import RandomizationManagerCfg, RandomizationTermCfg
 
 robot_state_dr_at_setup = {
@@ -149,4 +151,39 @@ g1_29dof_wbt_randomization_w_object = RandomizationManagerCfg(
     },
 )
 
-__all__ = ["g1_29dof_wbt_randomization", "g1_29dof_wbt_randomization_w_object"]
+g1_29dof_kfa_1307_stage1_randomization = g1_29dof_wbt_randomization
+
+g1_29dof_kfa_1307_stage2_randomization = g1_29dof_wbt_randomization
+
+g1_29dof_kfa_1307_stage3_randomization = replace(
+    g1_29dof_wbt_randomization,
+    setup_terms={
+        **g1_29dof_wbt_randomization.setup_terms,
+        "push_randomizer_state": replace(
+            g1_29dof_wbt_randomization.setup_terms["push_randomizer_state"],
+            params={
+                **g1_29dof_wbt_randomization.setup_terms["push_randomizer_state"].params,
+                "max_push_vel": [0.75, 0.75, 0.3, 0.78, 0.78, 1.17],
+            },
+        ),
+    },
+    reset_terms={
+        **g1_29dof_wbt_randomization.reset_terms,
+        "randomize_dof_state": replace(
+            g1_29dof_wbt_randomization.reset_terms["randomize_dof_state"],
+            params={
+                **g1_29dof_wbt_randomization.reset_terms["randomize_dof_state"].params,
+                "joint_pos_bias_range": [-0.02, 0.02],
+                "joint_vel_range": [-0.1, 0.1],
+            },
+        ),
+    },
+)
+
+__all__ = [
+    "g1_29dof_kfa_1307_stage1_randomization",
+    "g1_29dof_kfa_1307_stage2_randomization",
+    "g1_29dof_kfa_1307_stage3_randomization",
+    "g1_29dof_wbt_randomization",
+    "g1_29dof_wbt_randomization_w_object",
+]

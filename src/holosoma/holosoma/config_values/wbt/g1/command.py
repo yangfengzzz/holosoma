@@ -56,10 +56,10 @@ motion_config_recovery = replace(
     motion_config,
     motion_file=kfa_motion_file_placeholder,
     sampling_strategy=MotionConfig.MotionSamplingStrategy.LOW_KINETIC,
-    start_at_timestep_zero_prob=0.0,
-    freeze_at_timestep_zero_prob=0.0,
-    enable_default_pose_prepend=False,
-    enable_default_pose_append=False,
+    start_at_timestep_zero_prob=0.2,
+    freeze_at_timestep_zero_prob=0.95,
+    enable_default_pose_prepend=True,
+    enable_default_pose_append=True,
     recovery_shoulder_height_threshold=1.0,
     recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
         enabled=True,
@@ -120,6 +120,44 @@ motion_config_recovery_low_kinetic = replace(
         motion_config_recovery.recovery_init_dataset,
         sample_probability=0.25,
     ),
+)
+
+motion_config_kfa_1307_release_base = replace(
+    motion_config,
+    motion_file=get_kfa_released_motion_path(KFA_PRIMARY_REGRESSION_CLIP_ID),
+    use_adaptive_timesteps_sampler=False,
+    start_at_timestep_zero_prob=0.0,
+    freeze_at_timestep_zero_prob=0.0,
+    enable_default_pose_prepend=False,
+    enable_default_pose_append=False,
+    standing_like_reset_enabled=True,
+    reset_mode_weights=(1.0, 1.0),
+    standing_like_reset_joint_noise_scale=0.0,
+    standing_like_reset_root_noise_scale=0.0,
+    recovery_shoulder_height_threshold=1.0,
+    recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
+        enabled=True,
+        dataset_path="./artifacts/recovery_init/g1_ground_v1.npz",
+        sample_probability=0.0,
+        augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.ROTATION_RECOMBINATION,
+        dataset_kind=MotionConfig.RecoveryInitDatasetConfig.DatasetKind.RECOVERY_INIT,
+    ),
+)
+
+motion_config_kfa_1307_stage1 = replace(
+    motion_config_kfa_1307_release_base,
+    sampling_strategy=MotionConfig.MotionSamplingStrategy.START,
+)
+
+motion_config_kfa_1307_stage2 = replace(
+    motion_config_kfa_1307_release_base,
+    sampling_strategy=MotionConfig.MotionSamplingStrategy.ADAPTIVE,
+)
+
+motion_config_kfa_1307_stage3 = replace(
+    motion_config_kfa_1307_stage2,
+    standing_like_reset_joint_noise_scale=0.5,
+    standing_like_reset_root_noise_scale=1.5,
 )
 
 g1_29dof_wbt_command = CommandManagerCfg(
@@ -204,12 +242,45 @@ g1_29dof_wbt_recovery_low_kinetic_command = replace(
     },
 )
 
+g1_29dof_kfa_1307_stage1_command = replace(
+    g1_29dof_wbt_command,
+    setup_terms={
+        "motion_command": CommandTermCfg(
+            func="holosoma.managers.command.terms.wbt:MotionCommand",
+            params={"motion_config": motion_config_kfa_1307_stage1},
+        )
+    },
+)
+
+g1_29dof_kfa_1307_stage2_command = replace(
+    g1_29dof_wbt_command,
+    setup_terms={
+        "motion_command": CommandTermCfg(
+            func="holosoma.managers.command.terms.wbt:MotionCommand",
+            params={"motion_config": motion_config_kfa_1307_stage2},
+        )
+    },
+)
+
+g1_29dof_kfa_1307_stage3_command = replace(
+    g1_29dof_wbt_command,
+    setup_terms={
+        "motion_command": CommandTermCfg(
+            func="holosoma.managers.command.terms.wbt:MotionCommand",
+            params={"motion_config": motion_config_kfa_1307_stage3},
+        )
+    },
+)
+
 __all__ = [
     "KFA_OPTIONAL_REGRESSION_CLIP_IDS",
     "KFA_PRIMARY_REGRESSION_CLIP_ID",
     "KFA_RELEASED_MOTION_ROOT",
     "KFA_TRAINING_EXAMPLE_CLIP_ID",
     "g1_29dof_wbt_command",
+    "g1_29dof_kfa_1307_stage1_command",
+    "g1_29dof_kfa_1307_stage2_command",
+    "g1_29dof_kfa_1307_stage3_command",
     "g1_29dof_wbt_recovery_command",
     "g1_29dof_wbt_recovery_debug_base_command",
     "g1_29dof_wbt_recovery_low_kinetic_command",

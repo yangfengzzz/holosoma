@@ -61,10 +61,12 @@ def test_recovery_preset_uses_explicit_grsi_augmentation_mode():
     assert config.robot.asset.urdf_file.endswith("g1/g1_29dof_kfa.urdf")
     assert recovery_cfg.augmentation_mode == "rotation_recombination"
     assert recovery_cfg.dataset_kind == "recovery_init"
-    assert motion_cfg.start_at_timestep_zero_prob == 0.0
-    assert motion_cfg.freeze_at_timestep_zero_prob == 0.0
-    assert motion_cfg.enable_default_pose_prepend is False
-    assert motion_cfg.enable_default_pose_append is False
+    assert motion_cfg.sampling_strategy == "low_kinetic"
+    assert motion_cfg.use_adaptive_timesteps_sampler is True
+    assert motion_cfg.start_at_timestep_zero_prob == 0.2
+    assert motion_cfg.freeze_at_timestep_zero_prob == 0.95
+    assert motion_cfg.enable_default_pose_prepend is True
+    assert motion_cfg.enable_default_pose_append is True
     assert motion_cfg.recovery_shoulder_height_threshold == 1.0
     assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
     assert bad_tracking_cfg.func.endswith(":RecoveryAwareBadTracking")
@@ -109,3 +111,53 @@ def test_recovery_ablation_presets_resolve_with_expected_slip_weights():
 
     assert slip3.command.setup_terms["motion_command"].params["motion_config"].motion_file.endswith("/1317.npz")
     assert slip5.termination.terms["bad_tracking"].params["shoulder_height_threshold"] == 1.0
+
+
+def test_release_parity_stage_presets_resolve_with_expected_surface():
+    stage1 = tyro.cli(
+        AnnotatedExperimentConfig,
+        args=("exp:g1-29dof-kfa-1307-stage1-fast-sac",),
+        config=TYRO_CONIFG,
+    )
+    stage2 = tyro.cli(
+        AnnotatedExperimentConfig,
+        args=("exp:g1-29dof-kfa-1307-stage2-fast-sac",),
+        config=TYRO_CONIFG,
+    )
+    stage3 = tyro.cli(
+        AnnotatedExperimentConfig,
+        args=("exp:g1-29dof-kfa-1307-stage3-fast-sac",),
+        config=TYRO_CONIFG,
+    )
+
+    stage1_motion_cfg = stage1.command.setup_terms["motion_command"].params["motion_config"]
+    stage2_motion_cfg = stage2.command.setup_terms["motion_command"].params["motion_config"]
+    stage3_motion_cfg = stage3.command.setup_terms["motion_command"].params["motion_config"]
+
+    assert stage1.training.name == "g1_29dof_kfa_1307_stage1_fast_sac_manager"
+    assert stage2.training.name == "g1_29dof_kfa_1307_stage2_fast_sac_manager"
+    assert stage3.training.name == "g1_29dof_kfa_1307_stage3_fast_sac_manager"
+    assert stage1_motion_cfg.motion_file.endswith("/1307.npz")
+    assert stage1_motion_cfg.sampling_strategy == "start"
+    assert stage2_motion_cfg.sampling_strategy == "adaptive"
+    assert stage3_motion_cfg.sampling_strategy == "adaptive"
+    assert stage1_motion_cfg.standing_like_reset_enabled is True
+    assert tuple(stage1_motion_cfg.reset_mode_weights) == (1.0, 1.0)
+    assert stage1_motion_cfg.recovery_init_dataset.sample_probability == 0.0
+    assert stage1_motion_cfg.enable_default_pose_prepend is False
+    assert stage1_motion_cfg.enable_default_pose_append is False
+    assert stage3_motion_cfg.standing_like_reset_root_noise_scale == 1.5
+    assert stage3_motion_cfg.standing_like_reset_joint_noise_scale == 0.5
+    assert "motion_global_body_lin_vel" in stage1.reward.terms
+    assert "reward_center_of_mass" not in stage1.reward.terms
+    assert "reward_center_of_mass" in stage2.reward.terms
+    assert stage1.termination.terms["bad_tracking"].func.endswith(":ReleaseParityTolerantTracking")
+    assert stage2.termination.terms["bad_tracking"].params["predicate_specs"][-1]["kind"] == "hip_dof"
+    assert stage3.randomization.setup_terms["push_randomizer_state"].params["max_push_vel"] == [
+        0.75,
+        0.75,
+        0.3,
+        0.78,
+        0.78,
+        1.17,
+    ]

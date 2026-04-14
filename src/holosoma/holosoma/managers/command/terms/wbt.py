@@ -331,6 +331,49 @@ class LowKineticAnchorSampler:
         self.metrics["sampling_top1_anchor_timestep"] = self.anchor_timesteps[imax].float()
 
 
+class ReleaseLowKineticEnergySampler:
+    """Release-style low-kinetic sampler using softmin weights over per-frame energy."""
+
+    def __init__(
+        self,
+        joint_vel: torch.Tensor,
+        body_lin_vel_w: torch.Tensor,
+        body_ang_vel_w: torch.Tensor,
+        device: str,
+    ):
+        self.device = device
+        kinetic_energy = (
+            torch.sum(torch.square(joint_vel), dim=-1)
+            + torch.sum(torch.square(body_lin_vel_w), dim=(-1, -2))
+            + torch.sum(torch.square(body_ang_vel_w), dim=(-1, -2))
+        )
+        softmin_weights = torch.softmax(-kinetic_energy, dim=0)
+        min_weight = torch.min(softmin_weights)
+        max_weight = torch.max(softmin_weights)
+        if torch.isclose(max_weight, min_weight):
+            self.sample_weights = torch.ones_like(softmin_weights)
+        else:
+            self.sample_weights = (softmin_weights - min_weight) / (max_weight - min_weight)
+            self.sample_weights = torch.clamp(self.sample_weights, min=1e-6)
+        self.metrics: dict[str, torch.Tensor] = {}
+
+    @property
+    def sampling_probabilities(self) -> torch.Tensor:
+        weights = self.sample_weights / self.sample_weights.sum()
+        return weights
+
+    def sample(self, num_samples: int) -> torch.Tensor:
+        return torch.multinomial(self.sample_weights, num_samples, replacement=True)
+
+    def get_stats(self) -> None:
+        probs = self.sampling_probabilities
+        entropy = -(probs * (probs + 1e-12).log()).sum()
+        self.metrics["sampling_entropy"] = entropy / np.log(max(int(probs.numel()), 2))
+        pmax, imax = probs.max(dim=0)
+        self.metrics["sampling_top1_prob"] = pmax
+        self.metrics["sampling_top1_timestep"] = imax.float()
+
+
 #########################################################################################################
 ## Helper functions
 #########################################################################################################
@@ -377,6 +420,14 @@ class MotionCommand(CommandTermBase):
             device=self.device,
         )
         original_motion_joint_vel = self.motion.joint_vel.clone()
+        if hasattr(self.motion, "body_lin_vel_w") and hasattr(self.motion, "body_ang_vel_w"):
+            original_motion_body_lin_vel = self.motion.body_lin_vel_w.clone()
+            original_motion_body_ang_vel = self.motion.body_ang_vel_w.clone()
+        else:
+            original_motion_body_lin_vel = torch.zeros(
+                (original_motion_joint_vel.shape[0], 1, 3), dtype=torch.float32, device=self.device
+            )
+            original_motion_body_ang_vel = torch.zeros_like(original_motion_body_lin_vel)
 
         # Store body and joint indexes for interpolation
         self._body_indexes_in_motion = self.motion._body_indexes
@@ -432,6 +483,16 @@ class MotionCommand(CommandTermBase):
         else:
             self.low_kinetic_anchor_sampler = None
 
+        if sampling_strategy == MotionConfig.MotionSamplingStrategy.LKE:
+            self.release_lke_sampler = ReleaseLowKineticEnergySampler(
+                original_motion_joint_vel,
+                original_motion_body_lin_vel,
+                original_motion_body_ang_vel,
+                self.device,
+            )
+        else:
+            self.release_lke_sampler = None
+
         recovery_cfg = self.motion_cfg.recovery_init_dataset
         if recovery_cfg.enabled and recovery_cfg.dataset_path:
             self.recovery_init_dataset = RecoveryInitDataset(recovery_cfg.dataset_path, self.device)
@@ -456,16 +517,6 @@ class MotionCommand(CommandTermBase):
         self._regular_reset_count += torch.tensor(int(env_ids.numel()), dtype=torch.long, device=self.device)
         self._update_sampling_failures(env_ids)
         self.time_steps[env_ids] = self._sample_reference_timesteps(env_ids)
-
-        # Handle start_at_timestep_zero_prob
-        prob = self.motion_cfg.start_at_timestep_zero_prob
-        if prob >= 1.0:
-            self.time_steps[env_ids] = 0
-        elif prob > 0.0:
-            subset = self.time_steps[env_ids]
-            rand_vals = torch.rand_like(subset, dtype=torch.float32)
-            subset = torch.where(rand_vals < prob, torch.zeros_like(subset), subset)
-            self.time_steps[env_ids] = subset
 
         # If the motion is at the last timestep, set it to the second last timestep;
         # Otherwise, update_tasks_callback will advance the timestep to the next timestep -> out of bounds error.
@@ -549,9 +600,16 @@ class MotionCommand(CommandTermBase):
         ) * 2 * root_ang_vel_noise_rpy.unsqueeze(0)  # (num_envs, 3)
 
         # 3. Optionally replace reset state with a sampled recovery initialization.
-        recovery_mask = self._sample_recovery_reset_mask(env_ids)
+        standing_like_mask = self._sample_standing_like_reset_mask(env_ids)
+        recovery_mask = self._sample_recovery_reset_mask(env_ids, standing_like_mask=standing_like_mask)
+        if not hasattr(self, "is_standing_task"):
+            self.is_standing_task = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        if not hasattr(self, "_reset_standing_like_count"):
+            self._reset_standing_like_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self.is_standing_task[env_ids] = standing_like_mask
         self.last_reset_used_recovery[env_ids] = recovery_mask
         self._reset_recovery_count += recovery_mask.sum()
+        self._reset_standing_like_count += standing_like_mask.sum()
         self._reset_motion_count += (~recovery_mask).sum()
         if recovery_mask.any():
             recovery_env_ids = env_ids[recovery_mask]
@@ -567,6 +625,34 @@ class MotionCommand(CommandTermBase):
             target_root_rot[recovery_mask] = recovery_batch.root_states[:, 3:7]
             target_root_lin_vel[recovery_mask] = recovery_batch.root_states[:, 7:10]
             target_root_ang_vel[recovery_mask] = recovery_batch.root_states[:, 10:13]
+
+            if standing_like_mask.any():
+                standing_subset = standing_like_mask[recovery_mask]
+                if standing_subset.any():
+                    standing_env_ids = recovery_env_ids[standing_subset]
+                    standing_root_states = recovery_batch.root_states[standing_subset]
+                    target_root_pos[standing_like_mask, 2] = (
+                        standing_root_states[:, 2] + self._env.simulator.scene.env_origins[standing_env_ids, 2]
+                    )
+                    target_root_rot[standing_like_mask] = standing_root_states[:, 3:7]
+                    target_root_lin_vel[standing_like_mask] = standing_root_states[:, 7:10]
+                    target_root_ang_vel[standing_like_mask] = standing_root_states[:, 10:13]
+                    target_dof_pos[standing_like_mask] = recovery_batch.dof_pos[standing_subset]
+                    target_dof_vel[standing_like_mask] = torch.zeros_like(recovery_batch.dof_pos[standing_subset])
+                    (
+                        target_dof_pos,
+                        target_root_pos,
+                        target_root_rot,
+                        target_root_lin_vel,
+                        target_root_ang_vel,
+                    ) = self._apply_standing_like_reset_noise(
+                        standing_like_mask,
+                        target_dof_pos,
+                        target_root_pos,
+                        target_root_rot,
+                        target_root_lin_vel,
+                        target_root_ang_vel,
+                    )
 
         # 4. Set the robot states in simulator
         self._env.simulator.dof_pos[env_ids] = target_dof_pos
@@ -843,8 +929,10 @@ class MotionCommand(CommandTermBase):
     def init_buffers(self):
         self.time_steps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.last_reset_used_recovery = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        self.is_standing_task = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._reset_recovery_count = torch.tensor(0, dtype=torch.long, device=self.device)
         self._reset_motion_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self._reset_standing_like_count = torch.tensor(0, dtype=torch.long, device=self.device)
         self._terminated_in_recovery_count = torch.tensor(0, dtype=torch.long, device=self.device)
         self._terminated_outside_recovery_count = torch.tensor(0, dtype=torch.long, device=self.device)
         self._clip_end_reset_count = torch.tensor(0, dtype=torch.long, device=self.device)
@@ -907,12 +995,39 @@ class MotionCommand(CommandTermBase):
             self.metrics["motion/low_kinetic_sampler_top1_anchor_timestep"] = self.low_kinetic_anchor_sampler.metrics[
                 "sampling_top1_anchor_timestep"
             ]
+        if self.release_lke_sampler is not None:
+            self.release_lke_sampler.get_stats()
+            self.metrics["motion/release_lke_sampler_entropy"] = self.release_lke_sampler.metrics["sampling_entropy"]
+            self.metrics["motion/release_lke_sampler_top1_prob"] = self.release_lke_sampler.metrics[
+                "sampling_top1_prob"
+            ]
+            self.metrics["motion/release_lke_sampler_top1_timestep"] = self.release_lke_sampler.metrics[
+                "sampling_top1_timestep"
+            ]
+        default_num_envs = int(self.last_reset_used_recovery.shape[0])
+        standing_task_mask = getattr(
+            self,
+            "is_standing_task",
+            torch.zeros(default_num_envs, dtype=torch.bool, device=self.device),
+        )
+        reset_standing_like_count = getattr(
+            self,
+            "_reset_standing_like_count",
+            torch.tensor(0, dtype=torch.long, device=self.device),
+        )
         self.metrics["motion/reset_recovery_flag_fraction"] = self.last_reset_used_recovery.float().mean()
+        self.metrics["motion/reset_standing_like_flag_fraction"] = standing_task_mask.float().mean()
         self.metrics["motion/reset_recovery_count"] = self._reset_recovery_count.float()
         self.metrics["motion/reset_motion_count"] = self._reset_motion_count.float()
+        self.metrics["motion/reset_standing_like_count"] = reset_standing_like_count.float()
         total_resets = self._reset_recovery_count + self._reset_motion_count
         self.metrics["motion/reset_recovery_rate_on_reset"] = (
             self._reset_recovery_count.float() / total_resets.float()
+            if total_resets.item() > 0
+            else torch.tensor(0.0, device=self.device)
+        )
+        self.metrics["motion/reset_standing_like_rate_on_reset"] = (
+            reset_standing_like_count.float() / total_resets.float()
             if total_resets.item() > 0
             else torch.tensor(0.0, device=self.device)
         )
@@ -983,36 +1098,129 @@ class MotionCommand(CommandTermBase):
         if self._env.is_evaluating:
             return torch.zeros(env_ids.numel(), dtype=torch.long, device=self.device)
 
-        if strategy == MotionConfig.MotionSamplingStrategy.ADAPTIVE and self.adaptive_timesteps_sampler is not None:
+        if strategy == MotionConfig.MotionSamplingStrategy.START:
+            sampled = torch.zeros(env_ids.numel(), dtype=torch.long, device=self.device)
+        elif strategy == MotionConfig.MotionSamplingStrategy.ADAPTIVE and self.adaptive_timesteps_sampler is not None:
             phase = self.adaptive_timesteps_sampler.sample(env_ids.numel())
             sampled = (phase * (self.motion.time_step_total - 1)).long()
+        elif strategy == MotionConfig.MotionSamplingStrategy.LKE and self.release_lke_sampler is not None:
+            sampled = self.release_lke_sampler.sample(env_ids.numel())
         elif strategy == MotionConfig.MotionSamplingStrategy.LOW_KINETIC and self.low_kinetic_anchor_sampler is not None:
             sampled = self.low_kinetic_anchor_sampler.sample(env_ids.numel())
         else:
             phase = torch.rand(env_ids.numel(), device=self.device)
             sampled = (phase * (self.motion.time_step_total - 1)).long()
 
-        prob = self.motion_cfg.start_at_timestep_zero_prob
-        if prob >= 1.0:
-            sampled.zero_()
-        elif prob > 0.0:
-            rand_vals = torch.rand_like(sampled, dtype=torch.float32)
-            sampled = torch.where(rand_vals < prob, torch.zeros_like(sampled), sampled)
+        if strategy != MotionConfig.MotionSamplingStrategy.START:
+            prob = self.motion_cfg.start_at_timestep_zero_prob
+            if prob >= 1.0:
+                sampled.zero_()
+            elif prob > 0.0:
+                rand_vals = torch.rand_like(sampled, dtype=torch.float32)
+                sampled = torch.where(rand_vals < prob, torch.zeros_like(sampled), sampled)
 
         already_last_timestep_mask = sampled == self.motion.time_step_total - 1
         return torch.where(already_last_timestep_mask, self.motion.time_step_total - 2, sampled)
 
-    def _sample_recovery_reset_mask(self, env_ids: torch.Tensor) -> torch.Tensor:
+    def _sample_recovery_reset_mask(
+        self, env_ids: torch.Tensor, standing_like_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        if standing_like_mask is not None and standing_like_mask.any():
+            recovery_mask = standing_like_mask.clone()
+        else:
+            recovery_mask = torch.zeros(env_ids.numel(), dtype=torch.bool, device=self.device)
         recovery_cfg = self.motion_cfg.recovery_init_dataset
         if self.recovery_init_dataset is None or not recovery_cfg.enabled or self._env.is_evaluating:
-            return torch.zeros(env_ids.numel(), dtype=torch.bool, device=self.device)
+            return recovery_mask
 
         if recovery_cfg.sample_probability <= 0.0:
-            return torch.zeros(env_ids.numel(), dtype=torch.bool, device=self.device)
+            return recovery_mask
         if recovery_cfg.sample_probability >= 1.0:
             return torch.ones(env_ids.numel(), dtype=torch.bool, device=self.device)
 
-        return torch.rand(env_ids.numel(), device=self.device) < recovery_cfg.sample_probability
+        return recovery_mask | (torch.rand(env_ids.numel(), device=self.device) < recovery_cfg.sample_probability)
+
+    def _sample_standing_like_reset_mask(self, env_ids: torch.Tensor) -> torch.Tensor:
+        if (
+            not self.motion_cfg.standing_like_reset_enabled
+            or self.recovery_init_dataset is None
+            or not self.motion_cfg.recovery_init_dataset.enabled
+            or self._env.is_evaluating
+        ):
+            return torch.zeros(env_ids.numel(), dtype=torch.bool, device=self.device)
+
+        tracking_weight, standing_weight = self.motion_cfg.reset_mode_weights
+        tracking_weight = float(max(tracking_weight, 0.0))
+        standing_weight = float(max(standing_weight, 0.0))
+        total_weight = tracking_weight + standing_weight
+        if standing_weight <= 0.0 or total_weight <= 0.0:
+            return torch.zeros(env_ids.numel(), dtype=torch.bool, device=self.device)
+        if tracking_weight <= 0.0:
+            return torch.ones(env_ids.numel(), dtype=torch.bool, device=self.device)
+        standing_prob = standing_weight / total_weight
+        return torch.rand(env_ids.numel(), device=self.device) < standing_prob
+
+    def _apply_standing_like_reset_noise(
+        self,
+        standing_like_mask: torch.Tensor,
+        target_dof_pos: torch.Tensor,
+        target_root_pos: torch.Tensor,
+        target_root_rot: torch.Tensor,
+        target_root_lin_vel: torch.Tensor,
+        target_root_ang_vel: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if not standing_like_mask.any():
+            return target_dof_pos, target_root_pos, target_root_rot, target_root_lin_vel, target_root_ang_vel
+
+        joint_scale = float(self.motion_cfg.standing_like_reset_joint_noise_scale)
+        root_scale = float(self.motion_cfg.standing_like_reset_root_noise_scale)
+        if joint_scale > 0.0:
+            dof_pos_noise = self.init_pose_cfg.dof_pos * self.init_pose_cfg.overall_noise_scale * joint_scale
+            target_dof_pos[standing_like_mask] = target_dof_pos[standing_like_mask] + (
+                (torch.rand_like(target_dof_pos[standing_like_mask]) - 0.5) * 2 * dof_pos_noise
+            )
+            soft_joint_pos_limits = self._env.simulator.dof_pos_limits  # type: ignore[attr-defined]
+            target_dof_pos[standing_like_mask] = torch.clip(
+                target_dof_pos[standing_like_mask], soft_joint_pos_limits[:, 0], soft_joint_pos_limits[:, 1]
+            )
+
+        if root_scale > 0.0:
+            root_pos_noise = torch.tensor(self.init_pose_cfg.root_pos, device=self.device) * (
+                self.init_pose_cfg.overall_noise_scale * root_scale
+            )
+            root_rot_noise_rpy = torch.tensor(self.init_pose_cfg.root_rot, device=self.device) * (
+                self.init_pose_cfg.overall_noise_scale * root_scale
+            )
+            root_vel_noise = torch.tensor(self.init_pose_cfg.root_lin_vel, device=self.device) * (
+                self.init_pose_cfg.overall_noise_scale * root_scale
+            )
+            root_ang_vel_noise_rpy = torch.tensor(self.init_pose_cfg.root_ang_vel, device=self.device) * (
+                self.init_pose_cfg.overall_noise_scale * root_scale
+            )
+            target_root_pos[standing_like_mask] = target_root_pos[standing_like_mask] + (
+                (torch.rand_like(target_root_pos[standing_like_mask]) - 0.5) * 2 * root_pos_noise.unsqueeze(0)
+            )
+            rand_sample_rpy = (
+                (torch.rand((int(standing_like_mask.sum().item()), 3), device=self.device) - 0.5)
+                * 2
+                * root_rot_noise_rpy
+            )
+            orientations_delta = quat_from_euler_xyz(
+                rand_sample_rpy[:, 0], rand_sample_rpy[:, 1], rand_sample_rpy[:, 2]
+            )
+            target_root_rot[standing_like_mask] = quat_mul(
+                orientations_delta, target_root_rot[standing_like_mask], w_last=True
+            )
+            target_root_lin_vel[standing_like_mask] = target_root_lin_vel[standing_like_mask] + (
+                (torch.rand_like(target_root_lin_vel[standing_like_mask]) - 0.5) * 2 * root_vel_noise.unsqueeze(0)
+            )
+            target_root_ang_vel[standing_like_mask] = target_root_ang_vel[standing_like_mask] + (
+                (torch.rand_like(target_root_ang_vel[standing_like_mask]) - 0.5)
+                * 2
+                * root_ang_vel_noise_rpy.unsqueeze(0)
+            )
+
+        return target_dof_pos, target_root_pos, target_root_rot, target_root_lin_vel, target_root_ang_vel
 
     def _maybe_add_default_pose_transition(self, *, prepend: bool) -> None:
         """Shared path for optionally inserting default-pose interpolation before/after the clip."""

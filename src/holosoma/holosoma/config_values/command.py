@@ -3,6 +3,9 @@
 from holosoma.config_values.loco.g1.command import g1_29dof_command
 from holosoma.config_values.loco.t1.command import t1_29dof_command
 from holosoma.config_values.wbt.g1.command import (
+    g1_29dof_kfa_1307_stage1_command,
+    g1_29dof_kfa_1307_stage2_command,
+    g1_29dof_kfa_1307_stage3_command,
     g1_29dof_wbt_command,
     g1_29dof_wbt_command_w_object,
     g1_29dof_wbt_recovery_debug_base_command,
@@ -17,6 +20,9 @@ DEFAULTS = {
     "none": none,
     "t1_29dof": t1_29dof_command,
     "g1_29dof": g1_29dof_command,
+    "g1_29dof_kfa_1307_stage1": g1_29dof_kfa_1307_stage1_command,
+    "g1_29dof_kfa_1307_stage2": g1_29dof_kfa_1307_stage2_command,
+    "g1_29dof_kfa_1307_stage3": g1_29dof_kfa_1307_stage3_command,
     "g1_29dof_wbt": g1_29dof_wbt_command,
     "g1_29dof_wbt_recovery_debug_base": g1_29dof_wbt_recovery_debug_base_command,
     "g1_29dof_wbt_recovery_low_kinetic": g1_29dof_wbt_recovery_low_kinetic_command,
