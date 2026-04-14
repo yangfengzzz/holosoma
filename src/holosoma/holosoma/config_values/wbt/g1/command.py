@@ -80,15 +80,31 @@ motion_config_recovery = replace(
 motion_config_stand = replace(
     motion_config,
     motion_file=kfa_motion_file_placeholder,
-    start_at_timestep_zero_prob=0.0,
-    freeze_at_timestep_zero_prob=0.0,
-    enable_default_pose_prepend=False,
-    enable_default_pose_append=False,
+    # Keep the paper-facing low-dynamic Ground clip and reward surface, but
+    # start from a gentler reset curriculum so the stand policy can first solve
+    # the tracking problem before we remove easy-start scaffolding in ablations.
+    sampling_strategy=MotionConfig.MotionSamplingStrategy.LOW_KINETIC,
+    start_at_timestep_zero_prob=0.2,
+    freeze_at_timestep_zero_prob=0.95,
+    enable_default_pose_prepend=True,
+    enable_default_pose_append=True,
     recovery_shoulder_height_threshold=1.0,
+    low_kinetic_sampling=MotionConfig.LowKineticSamplingConfig(
+        anchor_window_size=15,
+        min_anchor_spacing=10,
+        ema_alpha=0.05,
+        uniform_ratio=0.1,
+        failure_weight=1.0,
+    ),
 )
 
 motion_config_recovery_debug_base = replace(
     motion_config_stand,
+    sampling_strategy=MotionConfig.MotionSamplingStrategy.UNIFORM,
+    start_at_timestep_zero_prob=0.0,
+    freeze_at_timestep_zero_prob=0.0,
+    enable_default_pose_prepend=False,
+    enable_default_pose_append=False,
     recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
         enabled=True,
         dataset_path="./artifacts/recovery_init/g1_ground_v1.npz",

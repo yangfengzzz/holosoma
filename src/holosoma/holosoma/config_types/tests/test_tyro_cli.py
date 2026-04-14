@@ -25,10 +25,12 @@ def test_kfa_stand_experiment_cli_surface():
     assert config.robot.asset.robot_type == "g1_29dof"
     assert "head_link" in config.robot.body_names
     assert motion_cfg.recovery_shoulder_height_threshold == 1.0
-    assert motion_cfg.start_at_timestep_zero_prob == 0.0
-    assert motion_cfg.freeze_at_timestep_zero_prob == 0.0
-    assert motion_cfg.enable_default_pose_prepend is False
-    assert motion_cfg.enable_default_pose_append is False
+    assert motion_cfg.sampling_strategy == "low_kinetic"
+    assert motion_cfg.use_adaptive_timesteps_sampler is True
+    assert motion_cfg.start_at_timestep_zero_prob == 0.2
+    assert motion_cfg.freeze_at_timestep_zero_prob == 0.95
+    assert motion_cfg.enable_default_pose_prepend is True
+    assert motion_cfg.enable_default_pose_append is True
     assert config.reward.terms["motion_relative_body_position_error_exp"].weight == 4.0
     assert config.reward.terms["motion_relative_body_position_error_exp"].tags == ["r_mtr", "tracking"]
     assert config.reward.terms["feet_slip_penalty"].params["contact_force_threshold"] == 8.0
