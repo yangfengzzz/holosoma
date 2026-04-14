@@ -390,6 +390,32 @@ def get_filtered_body_names(body_list: List[str], pattern: str) -> List[str]:
     return [body_name for body_name in body_list if re.match(pattern, body_name)]
 
 
+def select_most_diverse_quaternions(quats: torch.Tensor, num_select: int) -> torch.Tensor:
+    """Greedy farthest-point selection over absolute quaternion dot products."""
+    if quats.numel() == 0:
+        return torch.zeros(0, dtype=torch.long, device=quats.device)
+    num_select = max(1, min(int(num_select), quats.shape[0]))
+    selected_idx = [int(torch.randint(0, quats.shape[0], (1,), device=quats.device).item())]
+    if num_select == 1:
+        return torch.tensor(selected_idx, dtype=torch.long, device=quats.device)
+
+    all_indices = torch.arange(quats.shape[0], device=quats.device)
+    for _ in range(num_select - 1):
+        selected = torch.tensor(selected_idx, dtype=torch.long, device=quats.device)
+        remaining_mask = torch.ones(quats.shape[0], dtype=torch.bool, device=quats.device)
+        remaining_mask[selected] = False
+        remaining = all_indices[remaining_mask]
+        if remaining.numel() == 0:
+            break
+        remaining_quats = quats[remaining]
+        selected_quats = quats[selected]
+        similarity = torch.abs(remaining_quats @ selected_quats.T)
+        min_distance = (1.0 - similarity).min(dim=1).values
+        next_idx = remaining[min_distance.argmax()]
+        selected_idx.append(int(next_idx.item()))
+    return torch.tensor(selected_idx, dtype=torch.long, device=quats.device)
+
+
 class MotionCommand(CommandTermBase):
     def __init__(self, cfg: Any, env: WholeBodyTrackingManager):
         super().__init__(cfg, env)
@@ -444,7 +470,18 @@ class MotionCommand(CommandTermBase):
         self.tracked_body_indexes = self._get_index_of_a_in_b(
             self.motion_cfg.body_names_to_track, robot_body_names, self.device
         )
-        shoulder_body_names = ["left_shoulder_roll_link", "right_shoulder_roll_link"]
+        tracked_body_names = list(self.motion_cfg.body_names_to_track)
+        explicit_root_names = self.motion_cfg.root_body_names or ["pelvis"]
+        explicit_shoulder_names = self.motion_cfg.shoulders_body_names or [
+            "left_shoulder_roll_link",
+            "right_shoulder_roll_link",
+        ]
+        explicit_feet_names = self.motion_cfg.feet_body_names or ["left_ankle_roll_link", "right_ankle_roll_link"]
+        root_matches = [tracked_body_names.index(name) for name in explicit_root_names if name in tracked_body_names]
+        self.root_index = root_matches[0] if root_matches else 0
+        self.shoulders_indexes = [tracked_body_names.index(name) for name in explicit_shoulder_names if name in tracked_body_names]
+        self.feet_indexes = [tracked_body_names.index(name) for name in explicit_feet_names if name in tracked_body_names]
+        shoulder_body_names = explicit_shoulder_names
         self.shoulder_body_indices_in_robot = self._get_index_of_a_in_b(shoulder_body_names, robot_body_names, self.device)
         self.shoulder_body_indices_in_motion = self._get_index_of_a_in_b(
             shoulder_body_names, robot_body_names_alias, self.device
@@ -498,6 +535,16 @@ class MotionCommand(CommandTermBase):
             self.recovery_init_dataset = RecoveryInitDataset(recovery_cfg.dataset_path, self.device)
         else:
             self.recovery_init_dataset = None
+        self._standing_like_diverse_indices = torch.zeros(0, dtype=torch.long, device=self.device)
+        if (
+            self.recovery_init_dataset is not None
+            and self.motion_cfg.standing_like_reset_use_diverse_quaternions
+            and self.recovery_init_dataset.num_samples > 0
+        ):
+            self._standing_like_diverse_indices = select_most_diverse_quaternions(
+                self.recovery_init_dataset.root_states[:, 3:7],
+                self.motion_cfg.standing_like_reset_diverse_candidate_count,
+            )
 
         # 5. metrics
         self.metrics: dict[str, torch.Tensor] = {}
@@ -515,6 +562,15 @@ class MotionCommand(CommandTermBase):
             return
 
         self._regular_reset_count += torch.tensor(int(env_ids.numel()), dtype=torch.long, device=self.device)
+        if getattr(self.motion_cfg, "release_standing_relative_target", False) and any(
+            abs(v) > 0.0
+            for v in (
+                *self.init_pose_cfg.root_pos,
+                *self.init_pose_cfg.root_lin_vel,
+                *self.init_pose_cfg.root_ang_vel,
+            )
+        ):
+            self._parity_reset_base_count += torch.tensor(int(env_ids.numel()), dtype=torch.long, device=self.device)
         self._update_sampling_failures(env_ids)
         self.time_steps[env_ids] = self._sample_reference_timesteps(env_ids)
 
@@ -612,33 +668,50 @@ class MotionCommand(CommandTermBase):
         self._reset_standing_like_count += standing_like_mask.sum()
         self._reset_motion_count += (~recovery_mask).sum()
         if recovery_mask.any():
-            recovery_env_ids = env_ids[recovery_mask]
-            recovery_batch = self.recovery_init_dataset.sample(
-                recovery_env_ids.numel(),
-                augmentation_mode=self.motion_cfg.recovery_init_dataset.augmentation_mode,
-            )
-            target_dof_pos[recovery_mask] = recovery_batch.dof_pos
-            target_dof_vel[recovery_mask] = recovery_batch.dof_vel
-            target_root_pos[recovery_mask] = recovery_batch.root_states[:, :3] + self._env.simulator.scene.env_origins[
-                recovery_env_ids
-            ]
-            target_root_rot[recovery_mask] = recovery_batch.root_states[:, 3:7]
-            target_root_lin_vel[recovery_mask] = recovery_batch.root_states[:, 7:10]
-            target_root_ang_vel[recovery_mask] = recovery_batch.root_states[:, 10:13]
+            regular_recovery_mask = recovery_mask & ~standing_like_mask
+            if regular_recovery_mask.any():
+                recovery_env_ids = env_ids[regular_recovery_mask]
+                recovery_batch = self.recovery_init_dataset.sample(
+                    recovery_env_ids.numel(),
+                    augmentation_mode=self.motion_cfg.recovery_init_dataset.augmentation_mode,
+                )
+                target_dof_pos[regular_recovery_mask] = recovery_batch.dof_pos
+                target_dof_vel[regular_recovery_mask] = recovery_batch.dof_vel
+                target_root_pos[regular_recovery_mask] = (
+                    recovery_batch.root_states[:, :3] + self._env.simulator.scene.env_origins[recovery_env_ids]
+                )
+                target_root_rot[regular_recovery_mask] = recovery_batch.root_states[:, 3:7]
+                target_root_lin_vel[regular_recovery_mask] = recovery_batch.root_states[:, 7:10]
+                target_root_ang_vel[regular_recovery_mask] = recovery_batch.root_states[:, 10:13]
 
             if standing_like_mask.any():
-                standing_subset = standing_like_mask[recovery_mask]
-                if standing_subset.any():
-                    standing_env_ids = recovery_env_ids[standing_subset]
-                    standing_root_states = recovery_batch.root_states[standing_subset]
-                    target_root_pos[standing_like_mask, 2] = (
+                standing_mask_full = recovery_mask & standing_like_mask
+                if standing_mask_full.any():
+                    standing_env_ids = env_ids[standing_mask_full]
+                    standing_batch = self.recovery_init_dataset.sample(
+                        standing_env_ids.numel(),
+                        augmentation_mode=self.motion_cfg.recovery_init_dataset.augmentation_mode,
+                    )
+                    standing_root_states = standing_batch.root_states
+                    standing_dof_pos = standing_batch.dof_pos
+                    if self._standing_like_diverse_indices.numel() > 0:
+                        standing_sample_ids = self._standing_like_diverse_indices[
+                            torch.randint(
+                                self._standing_like_diverse_indices.numel(),
+                                (standing_env_ids.numel(),),
+                                device=self.device,
+                            )
+                        ]
+                        standing_root_states = self.recovery_init_dataset.root_states[standing_sample_ids]
+                        standing_dof_pos = self.recovery_init_dataset.dof_pos[standing_sample_ids]
+                    target_root_pos[standing_mask_full, 2] = (
                         standing_root_states[:, 2] + self._env.simulator.scene.env_origins[standing_env_ids, 2]
                     )
-                    target_root_rot[standing_like_mask] = standing_root_states[:, 3:7]
-                    target_root_lin_vel[standing_like_mask] = standing_root_states[:, 7:10]
-                    target_root_ang_vel[standing_like_mask] = standing_root_states[:, 10:13]
-                    target_dof_pos[standing_like_mask] = recovery_batch.dof_pos[standing_subset]
-                    target_dof_vel[standing_like_mask] = torch.zeros_like(recovery_batch.dof_pos[standing_subset])
+                    target_root_rot[standing_mask_full] = standing_root_states[:, 3:7]
+                    target_root_lin_vel[standing_mask_full] = standing_root_states[:, 7:10]
+                    target_root_ang_vel[standing_mask_full] = standing_root_states[:, 10:13]
+                    target_dof_pos[standing_mask_full] = standing_dof_pos
+                    target_dof_vel[standing_mask_full] = torch.zeros_like(standing_dof_pos)
                     (
                         target_dof_pos,
                         target_root_pos,
@@ -646,7 +719,7 @@ class MotionCommand(CommandTermBase):
                         target_root_lin_vel,
                         target_root_ang_vel,
                     ) = self._apply_standing_like_reset_noise(
-                        standing_like_mask,
+                        standing_mask_full,
                         target_dof_pos,
                         target_root_pos,
                         target_root_rot,
@@ -748,19 +821,32 @@ class MotionCommand(CommandTermBase):
         robot_ref_quat_w_repeat = robot_ref_quat_w[:, None, :].repeat(1, len(self.motion_cfg.body_names_to_track), 1)  # type: ignore[arg-type]
 
         ## 1.2 compute the relative body poses
-        delta_quat_w = yaw_quat(
-            quat_mul(robot_ref_quat_w_repeat, quat_inverse(ref_quat_w_repeat, w_last=True), w_last=True), w_last=True
-        )
-        ### 1.2.1 body_quat_relative_w
-        self.body_quat_relative_w = quat_mul(delta_quat_w, self.body_quat_w, w_last=True)
-        ### 1.2.2 body_pos_relative_w
-        delta_pos_w_height = ref_pos_w_repeat - robot_ref_pos_w_repeat
-        delta_pos_w_height[..., :2] = 0.0  # adjusting for height differences
-        self.body_pos_relative_w = (
-            robot_ref_pos_w_repeat
-            + delta_pos_w_height
-            + quat_apply(delta_quat_w, self.body_pos_w - ref_pos_w_repeat, w_last=True)
-        )
+        if self.motion_cfg.release_standing_relative_target:
+            self.prev_anchor_pos[:] = self.current_anchor_pos
+            self.current_anchor_pos[:] = self.robot_anchor_pos_w
+            delta_quat_w = yaw_quat(
+                quat_mul(robot_ref_quat_w_repeat, quat_inverse(ref_quat_w_repeat, w_last=True), w_last=True), w_last=True
+            )
+            self.body_quat_relative_w = quat_mul(delta_quat_w, self.body_quat_w, w_last=True)
+            delta_pos_w = robot_ref_pos_w_repeat.clone()
+            delta_pos_w[..., 2] = ref_pos_w_repeat[..., 2]
+            self.body_pos_relative_w = delta_pos_w + quat_apply(
+                delta_quat_w,
+                self.body_pos_w - ref_pos_w_repeat,
+                w_last=True,
+            )
+        else:
+            delta_quat_w = yaw_quat(
+                quat_mul(robot_ref_quat_w_repeat, quat_inverse(ref_quat_w_repeat, w_last=True), w_last=True), w_last=True
+            )
+            self.body_quat_relative_w = quat_mul(delta_quat_w, self.body_quat_w, w_last=True)
+            delta_pos_w_height = ref_pos_w_repeat - robot_ref_pos_w_repeat
+            delta_pos_w_height[..., :2] = 0.0  # adjusting for height differences
+            self.body_pos_relative_w = (
+                robot_ref_pos_w_repeat
+                + delta_pos_w_height
+                + quat_apply(delta_quat_w, self.body_pos_w - ref_pos_w_repeat, w_last=True)
+            )
 
         ### 1.3 update the adaptive timesteps sampler
         if self.adaptive_timesteps_sampler is not None:
@@ -815,6 +901,14 @@ class MotionCommand(CommandTermBase):
     @property
     def ref_ang_vel_w(self) -> torch.Tensor:
         return self.motion.body_ang_vel_w[self.time_steps, self.ref_body_index]
+
+    @property
+    def anchor_pos_w(self) -> torch.Tensor:
+        return self.ref_pos_w
+
+    @property
+    def anchor_quat_w(self) -> torch.Tensor:
+        return self.ref_quat_w
 
     @property
     def root_pos_w(self) -> torch.Tensor:
@@ -891,6 +985,14 @@ class MotionCommand(CommandTermBase):
     def robot_ref_ang_vel_w(self) -> torch.Tensor:
         return self._env.simulator._rigid_body_ang_vel[:, self.ref_body_index, :]
 
+    @property
+    def robot_anchor_pos_w(self) -> torch.Tensor:
+        return self.robot_ref_pos_w
+
+    @property
+    def robot_anchor_quat_w(self) -> torch.Tensor:
+        return self.robot_ref_quat_w
+
     #########################################################################################
     ## Object from motion data
     #########################################################################################
@@ -937,6 +1039,9 @@ class MotionCommand(CommandTermBase):
         self._terminated_outside_recovery_count = torch.tensor(0, dtype=torch.long, device=self.device)
         self._clip_end_reset_count = torch.tensor(0, dtype=torch.long, device=self.device)
         self._regular_reset_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self._parity_reset_base_count = torch.tensor(0, dtype=torch.long, device=self.device)
+        self.prev_anchor_pos = torch.zeros(self.num_envs, 3, device=self.device)
+        self.current_anchor_pos = torch.zeros(self.num_envs, 3, device=self.device)
         self.body_pos_relative_w = torch.zeros(
             self.num_envs, len(self.motion_cfg.body_names_to_track), 3, device=self.device
         )  # type: ignore[arg-type]
@@ -1020,6 +1125,21 @@ class MotionCommand(CommandTermBase):
         self.metrics["motion/reset_recovery_count"] = self._reset_recovery_count.float()
         self.metrics["motion/reset_motion_count"] = self._reset_motion_count.float()
         self.metrics["motion/reset_standing_like_count"] = reset_standing_like_count.float()
+        diverse_subset_size = getattr(
+            self,
+            "_standing_like_diverse_indices",
+            torch.zeros(0, dtype=torch.long, device=self.device),
+        ).numel()
+        parity_reset_base_count = getattr(
+            self,
+            "_parity_reset_base_count",
+            torch.tensor(0, dtype=torch.long, device=self.device),
+        )
+        self.metrics["motion/reset_standing_like_diverse_subset_size"] = torch.tensor(
+            float(diverse_subset_size),
+            device=self.device,
+        )
+        self.metrics["motion/parity_reset_base_count"] = parity_reset_base_count.float()
         total_resets = self._reset_recovery_count + self._reset_motion_count
         self.metrics["motion/reset_recovery_rate_on_reset"] = (
             self._reset_recovery_count.float() / total_resets.float()
@@ -1028,6 +1148,11 @@ class MotionCommand(CommandTermBase):
         )
         self.metrics["motion/reset_standing_like_rate_on_reset"] = (
             reset_standing_like_count.float() / total_resets.float()
+            if total_resets.item() > 0
+            else torch.tensor(0.0, device=self.device)
+        )
+        self.metrics["motion/parity_reset_base_rate_on_reset"] = (
+            parity_reset_base_count.float() / total_resets.float()
             if total_resets.item() > 0
             else torch.tensor(0.0, device=self.device)
         )

@@ -146,6 +146,17 @@ def motion_ref_pos_b(env: WholeBodyTrackingManager) -> torch.Tensor:
     return pos.view(env.num_envs, -1)
 
 
+def motion_anchor_pos_b(env: WholeBodyTrackingManager) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    pos, _ = subtract_frame_transforms(
+        motion_command.robot_anchor_pos_w,
+        motion_command.robot_anchor_quat_w,
+        motion_command.anchor_pos_w,
+        motion_command.anchor_quat_w,
+    )
+    return pos.view(env.num_envs, -1)
+
+
 def motion_ref_ori_b(env: WholeBodyTrackingManager) -> torch.Tensor:
     motion_command = _get_motion_command_and_assert_type(env)
     _, ori = subtract_frame_transforms(
@@ -153,6 +164,18 @@ def motion_ref_ori_b(env: WholeBodyTrackingManager) -> torch.Tensor:
         motion_command.robot_ref_quat_w,
         motion_command.ref_pos_w,
         motion_command.ref_quat_w,
+    )
+    mat = quaternion_to_matrix(ori, w_last=True)
+    return mat[..., :2].reshape(mat.shape[0], -1)
+
+
+def motion_anchor_ori_b(env: WholeBodyTrackingManager) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    _, ori = subtract_frame_transforms(
+        motion_command.robot_anchor_pos_w,
+        motion_command.robot_anchor_quat_w,
+        motion_command.anchor_pos_w,
+        motion_command.anchor_quat_w,
     )
     mat = quaternion_to_matrix(ori, w_last=True)
     return mat[..., :2].reshape(mat.shape[0], -1)

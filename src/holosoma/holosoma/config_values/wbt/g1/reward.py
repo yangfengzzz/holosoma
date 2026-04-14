@@ -264,32 +264,32 @@ g1_29dof_wbt_recovery_slip5_fast_sac_reward = _replace_term_weight(
 
 g1_29dof_kfa_release_stage_base_fast_sac_reward = RewardManagerCfg(
     terms={
-        "motion_global_ref_position_error_exp": RewardTermCfg(
+        "motion_global_root_pos": RewardTermCfg(
             func="holosoma.managers.reward.terms.wbt:motion_global_ref_position_error_exp",
             params={"sigma": 0.3},
             weight=0.5,
         ),
-        "motion_global_ref_orientation_error_exp": RewardTermCfg(
+        "motion_global_root_ori": RewardTermCfg(
             func="holosoma.managers.reward.terms.wbt:motion_global_ref_orientation_error_exp",
             params={"sigma": 0.4},
             weight=0.5,
         ),
-        "motion_relative_body_position_error_exp": RewardTermCfg(
+        "motion_body_pos": RewardTermCfg(
             func="holosoma.managers.reward.terms.wbt:motion_relative_body_position_error_exp",
             params={"sigma": 0.3},
             weight=1.0,
         ),
-        "motion_relative_body_orientation_error_exp": RewardTermCfg(
+        "motion_body_ori": RewardTermCfg(
             func="holosoma.managers.reward.terms.wbt:motion_relative_body_orientation_error_exp",
             params={"sigma": 0.4},
             weight=1.0,
         ),
-        "motion_global_body_lin_vel": RewardTermCfg(
+        "motion_body_lin_vel": RewardTermCfg(
             func="holosoma.managers.reward.terms.wbt:motion_global_body_lin_vel",
             params={"sigma": 1.0},
             weight=1.0,
         ),
-        "motion_global_body_ang_vel": RewardTermCfg(
+        "motion_body_ang_vel": RewardTermCfg(
             func="holosoma.managers.reward.terms.wbt:motion_global_body_ang_vel",
             params={"sigma": 3.14},
             weight=1.0,
@@ -298,35 +298,34 @@ g1_29dof_kfa_release_stage_base_fast_sac_reward = RewardManagerCfg(
             func="holosoma.managers.reward.terms.wbt:penalty_action_rate",
             weight=-0.1,
         ),
-        "limits_dof_pos": RewardTermCfg(
+        "joint_limit": RewardTermCfg(
             func="holosoma.managers.reward.terms.wbt:limits_dof_pos",
             params={"soft_dof_pos_limit": 0.9},
             weight=-10.0,
         ),
-        "undesired_contacts": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:UndesiredContacts",
+        "self_collisions": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:self_collision_cost",
             params={
-                "threshold": 1.0,
-                "undesired_contacts_body_names": (
-                    "^(?!left_foot_contact_point$)(?!right_foot_contact_point$)"
-                    "(?!left_wrist_yaw_link$)(?!right_wrist_yaw_link$)"
-                    "(?!left_ankle_roll_link$)(?!right_ankle_roll_link$).+$"
-                ),
+                "force_threshold": 10.0,
             },
-            weight=-0.1,
+            weight=-10.0,
         ),
-        "recovery_relative_shoulder_height_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:recovery_relative_shoulder_height_penalty",
-            params={"shoulder_height_threshold": None},
+        "electrical_power_cost": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:electrical_power_cost",
+            params={"joint_names_regex": ".*_knee_joint"},
+            weight=-10.0,
+        ),
+        "penalty_relative_shoulder_high": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:relative_shoulder_height_penalty",
             weight=-2.0,
         ),
-        "root_orientation_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:root_orientation_penalty",
+        "penalty_relative_root_orientation": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:relative_root_orientation_penalty",
             weight=-0.5,
         ),
-        "recovery_xy_root_movement_penalty": RewardTermCfg(
-            func="holosoma.managers.reward.terms.wbt:recovery_xy_root_movement_penalty",
-            params={"shoulder_height_threshold": None},
+        "penalty_xy_rate_before_stand": RewardTermCfg(
+            func="holosoma.managers.reward.terms.wbt:xy_rate_before_stand_penalty",
+            params={"stand_threshold": 0.1},
             weight=-1.0,
         ),
     }
@@ -338,8 +337,8 @@ g1_29dof_kfa_1307_stage2_fast_sac_reward = _add_or_replace_term(
     g1_29dof_kfa_release_stage_base_fast_sac_reward,
     "reward_center_of_mass",
     RewardTermCfg(
-        func="holosoma.managers.reward.terms.wbt:motion_com_support_alignment_exp",
-        params={"sigma": 0.1, "contact_force_threshold": 1.0},
+        func="holosoma.managers.reward.terms.wbt:reward_center_of_mass",
+        params={"sigma_com": 0.1},
         weight=1.0,
     ),
 )

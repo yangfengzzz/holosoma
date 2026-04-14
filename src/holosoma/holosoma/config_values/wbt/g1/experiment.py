@@ -302,6 +302,7 @@ g1_29dof_kfa_1307_stage1_fast_sac = replace(
     termination=termination.g1_29dof_kfa_1307_stage1_termination,
     randomization=randomization.g1_29dof_kfa_1307_stage1_randomization,
     reward=reward.g1_29dof_kfa_1307_stage1_fast_sac_reward,
+    observation=observation.g1_29dof_kfa_release_standing_observation,
 )
 
 g1_29dof_kfa_1307_stage2_fast_sac = replace(
@@ -326,6 +327,7 @@ g1_29dof_kfa_1307_stage3_fast_sac = replace(
     termination=termination.g1_29dof_kfa_1307_stage3_termination,
     randomization=randomization.g1_29dof_kfa_1307_stage3_randomization,
     reward=reward.g1_29dof_kfa_1307_stage3_fast_sac_reward,
+    terrain=terrain.terrain_locomotion_mix,
 )
 
 __all__ = [

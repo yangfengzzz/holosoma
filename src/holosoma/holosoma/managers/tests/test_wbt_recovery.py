@@ -10,7 +10,12 @@ import torch
 
 from holosoma.config_types.command import CommandTermCfg
 from holosoma.config_types.termination import TerminationTermCfg
-from holosoma.managers.command.terms.wbt import LowKineticAnchorSampler, MotionCommand, ReleaseLowKineticEnergySampler
+from holosoma.managers.command.terms.wbt import (
+    LowKineticAnchorSampler,
+    MotionCommand,
+    ReleaseLowKineticEnergySampler,
+    select_most_diverse_quaternions,
+)
 from holosoma.managers.reward.terms import wbt as wbt_reward_terms
 from holosoma.managers.termination.terms import wbt as wbt_termination_terms
 from holosoma.config_types.command import MotionConfig, NoiseToInitialPoseConfig
@@ -78,6 +83,20 @@ def test_release_low_kinetic_energy_sampler_prefers_low_energy_frames():
     assert probs.shape == (3,)
     assert torch.isclose(probs.sum(), torch.tensor(1.0), atol=1e-6)
     assert probs[0].item() > probs[1].item()
+
+
+def test_select_most_diverse_quaternions_uses_random_seed_index():
+    quats = torch.tensor(
+        [
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    with patch("torch.randint", return_value=torch.tensor([1])):
+        selected = select_most_diverse_quaternions(quats, 2)
+    assert selected[0].item() == 1
 
 
 def test_recovery_dataset_sampling_and_augmentation_modes(tmp_path):
@@ -247,6 +266,24 @@ def test_recovery_shoulder_height_threshold_defaults_to_motion_config():
     with patch.object(wbt_reward_terms, "_get_motion_command_and_assert_type", return_value=motion_command):
         penalty = wbt_reward_terms.recovery_action_rate_penalty(env, shoulder_height_threshold=None)
     assert penalty.tolist() == [1.0, 0.0]
+
+
+def test_self_collision_cost_counts_all_bodies_without_filter():
+    env = SimpleNamespace(
+        num_envs=1,
+        device="cpu",
+        simulator=SimpleNamespace(
+            _body_list=["pelvis", "arm"],
+            contact_forces_history=torch.tensor(
+                [[[[0.0, 0.0, 0.0], [11.0, 0.0, 0.0]], [[12.0, 0.0, 0.0], [0.0, 0.0, 0.0]]]],
+                dtype=torch.float32,
+            ),
+        ),
+    )
+
+    penalty = wbt_reward_terms.self_collision_cost(env, force_threshold=10.0)
+
+    assert penalty.item() == pytest.approx(2.0)
 
 
 def test_motion_com_support_alignment_uses_support_foot():
@@ -576,6 +613,54 @@ def test_motion_command_recovery_reset_mask_respects_sample_probability_extremes
     assert term._sample_recovery_reset_mask(env_ids).all()
 
 
+def test_motion_command_setup_uses_explicit_standing_body_groups():
+    class FakeMotionLoader:
+        def __init__(self, *args, **kwargs):
+            self._joint_vel = torch.zeros((4, 1), dtype=torch.float32)
+            self._joint_pos = torch.zeros((4, 1), dtype=torch.float32)
+            self._body_indexes = torch.arange(4, dtype=torch.long)
+            self._joint_indexes = torch.arange(1, dtype=torch.long)
+            self.time_step_total = 4
+            self.has_object = False
+
+        @property
+        def joint_vel(self):
+            return self._joint_vel
+
+    motion_cfg = MotionConfig(
+        motion_file="unused.npz",
+        body_name_ref=["torso_link"],
+        body_names_to_track=["right_ankle_roll_link", "torso_link", "pelvis", "left_shoulder_roll_link"],
+        root_body_names=["pelvis"],
+        shoulders_body_names=["left_shoulder_roll_link"],
+        feet_body_names=["right_ankle_roll_link"],
+        sampling_strategy=MotionConfig.MotionSamplingStrategy.UNIFORM,
+    )
+    env = SimpleNamespace(
+        num_envs=1,
+        device="cpu",
+        dt=0.02,
+        viewer=False,
+        simulator=SimpleNamespace(
+            _body_list=["right_ankle_roll_link", "torso_link", "pelvis", "left_shoulder_roll_link"],
+            dof_names=["joint0"],
+        ),
+    )
+    cfg = CommandTermCfg(func="unused", params={"motion_config": motion_cfg})
+
+    with patch("holosoma.managers.command.terms.wbt.MotionLoader", FakeMotionLoader), patch.object(
+        MotionCommand,
+        "_maybe_add_default_pose_transition",
+        lambda self, prepend: None,
+    ):
+        term = MotionCommand(cfg, env)
+        term.setup()
+
+    assert term.root_index == 2
+    assert term.shoulders_indexes == [3]
+    assert term.feet_indexes == [0]
+
+
 def test_motion_command_standing_like_reset_mask_uses_reset_mode_weights():
     term = object.__new__(MotionCommand)
     term.device = "cpu"
@@ -622,6 +707,7 @@ def test_motion_command_reset_applies_recovery_batch_to_selected_envs():
     term._terminated_outside_recovery_count = torch.tensor(0, dtype=torch.long)
     term._clip_end_reset_count = torch.tensor(0, dtype=torch.long)
     term._regular_reset_count = torch.tensor(0, dtype=torch.long)
+    term._standing_like_diverse_indices = torch.zeros(0, dtype=torch.long)
     term.motion = SimpleNamespace(time_step_total=4, has_object=False)
     term.init_pose_cfg = NoiseToInitialPoseConfig()
     term.motion_cfg = SimpleNamespace(
@@ -682,6 +768,83 @@ def test_motion_command_reset_applies_recovery_batch_to_selected_envs():
     assert torch.allclose(simulator.robot_root_states[0, :3], torch.tensor([0.1, 0.2, 0.3]))
     assert torch.allclose(simulator.robot_root_states[1, :3], torch.tensor([11.0, 2.0, 3.0]))
     assert torch.allclose(simulator.robot_root_states[1, 3:7], torch.tensor([0.0, 0.0, 0.0, 1.0]))
+
+
+def test_motion_command_standing_like_reset_preserves_motion_xy_and_swaps_standing_state():
+    term = object.__new__(MotionCommand)
+    term.num_envs = 1
+    term.device = "cpu"
+    term.time_steps = torch.zeros(1, dtype=torch.long)
+    term.last_reset_used_recovery = torch.zeros(1, dtype=torch.bool)
+    term.is_standing_task = torch.zeros(1, dtype=torch.bool)
+    term._reset_recovery_count = torch.tensor(0, dtype=torch.long)
+    term._reset_motion_count = torch.tensor(0, dtype=torch.long)
+    term._reset_standing_like_count = torch.tensor(0, dtype=torch.long)
+    term._terminated_in_recovery_count = torch.tensor(0, dtype=torch.long)
+    term._terminated_outside_recovery_count = torch.tensor(0, dtype=torch.long)
+    term._clip_end_reset_count = torch.tensor(0, dtype=torch.long)
+    term._regular_reset_count = torch.tensor(0, dtype=torch.long)
+    term._standing_like_diverse_indices = torch.zeros(0, dtype=torch.long)
+    term.motion = SimpleNamespace(time_step_total=4, has_object=False)
+    term.init_pose_cfg = NoiseToInitialPoseConfig()
+    term.motion_cfg = SimpleNamespace(
+        start_at_timestep_zero_prob=0.0,
+        recovery_init_dataset=SimpleNamespace(
+            enabled=True,
+            sample_probability=0.0,
+            augmentation_mode=MotionConfig.RecoveryInitDatasetConfig.AugmentationMode.NONE,
+        ),
+    )
+    simulator = SimpleNamespace(
+        dof_pos_limits=torch.tensor([[-1.0, 1.0], [-1.0, 1.0]], dtype=torch.float32),
+        dof_pos=torch.zeros((1, 2), dtype=torch.float32),
+        dof_vel=torch.zeros((1, 2), dtype=torch.float32),
+        robot_root_states=torch.zeros((1, 13), dtype=torch.float32),
+        scene=SimpleNamespace(env_origins=torch.tensor([[10.0, 0.0, 0.0]], dtype=torch.float32)),
+    )
+    term._env = SimpleNamespace(simulator=simulator)
+    term.recovery_init_dataset = SimpleNamespace(
+        root_states=torch.tensor([[1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]], dtype=torch.float32),
+        dof_pos=torch.tensor([[0.7, -0.7]], dtype=torch.float32),
+        sample=lambda batch_size, augmentation_mode: SimpleNamespace(
+            dof_pos=torch.tensor([[0.7, -0.7]], dtype=torch.float32),
+            dof_vel=torch.tensor([[0.3, -0.3]], dtype=torch.float32),
+            root_states=torch.tensor(
+                [[1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]],
+                dtype=torch.float32,
+            ),
+        ),
+    )
+
+    with patch.object(MotionCommand, "_update_sampling_failures", return_value=None), patch.object(
+        MotionCommand, "_sample_reference_timesteps", return_value=torch.zeros(1, dtype=torch.long)
+    ), patch.object(
+        MotionCommand, "_sample_standing_like_reset_mask", return_value=torch.tensor([True], dtype=torch.bool)
+    ), patch.object(
+        MotionCommand, "_sample_recovery_reset_mask", return_value=torch.tensor([True], dtype=torch.bool)
+    ), patch.object(
+        MotionCommand, "_apply_standing_like_reset_noise", side_effect=lambda *args: args[1:]
+    ), patch.object(
+        MotionCommand, "root_pos_w", new_callable=PropertyMock, return_value=torch.tensor([[0.4, 0.5, 0.6]], dtype=torch.float32)
+    ), patch.object(
+        MotionCommand, "root_quat_w", new_callable=PropertyMock, return_value=torch.tensor([[0.1, 0.0, 0.0, 0.995]], dtype=torch.float32)
+    ), patch.object(
+        MotionCommand, "root_lin_vel_w", new_callable=PropertyMock, return_value=torch.tensor([[0.2, 0.3, 0.4]], dtype=torch.float32)
+    ), patch.object(
+        MotionCommand, "root_ang_vel_w", new_callable=PropertyMock, return_value=torch.tensor([[0.5, 0.6, 0.7]], dtype=torch.float32)
+    ), patch.object(
+        MotionCommand, "joint_pos", new_callable=PropertyMock, return_value=torch.tensor([[0.1, -0.1]], dtype=torch.float32)
+    ), patch.object(
+        MotionCommand, "joint_vel", new_callable=PropertyMock, return_value=torch.zeros((1, 2), dtype=torch.float32)
+    ):
+        term.reset(torch.tensor([0], dtype=torch.long))
+
+    assert torch.allclose(simulator.robot_root_states[0, :2], torch.tensor([0.4, 0.5]))
+    assert torch.allclose(simulator.robot_root_states[0, 2:3], torch.tensor([3.0]))
+    assert torch.allclose(simulator.robot_root_states[0, 3:7], torch.tensor([0.0, 0.0, 0.0, 1.0]))
+    assert torch.allclose(simulator.robot_root_states[0, 7:10], torch.tensor([4.0, 5.0, 6.0]))
+    assert torch.allclose(simulator.dof_pos[0], torch.tensor([0.7, -0.7]))
+    assert torch.allclose(simulator.dof_vel[0], torch.tensor([0.0, 0.0]))
 
 
 def test_motion_command_recovery_reset_mask_approx_matches_mixed_probability():
@@ -776,6 +939,45 @@ def test_motion_command_update_metrics_reports_reset_event_rates():
     assert term.metrics["motion/reset_motion_count"].item() == 1.0
     assert term.metrics["motion/terminated_in_recovery_fraction"].item() == pytest.approx(0.5)
     assert term.metrics["motion/clip_end_reset_fraction"].item() == pytest.approx(0.25)
+
+
+def test_reward_center_of_mass_only_rewards_single_support():
+    motion_command = object.__new__(MotionCommand)
+    motion_command.feet_indexes = [0, 1]
+    robot_body_pos = torch.tensor(
+        [
+            [[0.1, 0.0, 0.30], [0.0, 0.0, 0.10]],
+            [[0.1, 0.0, 0.20], [0.0, 0.0, 0.19]],
+        ],
+        dtype=torch.float32,
+    )
+    env = SimpleNamespace(
+        num_envs=2,
+        device="cpu",
+        robot_com_pos_w=torch.tensor(
+            [
+                [0.0, 0.0, 0.20],
+                [0.0, 0.0, 0.20],
+            ],
+            dtype=torch.float32,
+        ),
+        rigid_body_masses=torch.tensor([1.0, 1.0], dtype=torch.float32),
+        simulator=SimpleNamespace(
+            _rigid_body_pos=torch.tensor(
+                [
+                    [[0.0, 0.0, 0.30], [0.2, 0.0, 0.10]],
+                    [[0.0, 0.0, 0.20], [0.2, 0.0, 0.19]],
+                ],
+                dtype=torch.float32,
+            )
+        ),
+        command_manager=SimpleNamespace(get_state=lambda name: motion_command),
+    )
+    with patch.object(MotionCommand, "robot_body_pos_w", new_callable=PropertyMock, return_value=robot_body_pos):
+        reward = wbt_reward_terms.reward_center_of_mass(env, sigma_com=0.1)
+
+    assert reward[0].item() > 0.0
+    assert reward[1].item() == pytest.approx(0.0)
 
 
 def test_recovery_debug_and_low_kinetic_presets_are_staged_from_recovery():

@@ -40,6 +40,20 @@ def _resolve_recovery_threshold(
     return motion_command, threshold
 
 
+def _safe_dof_forces(env: WholeBodyTrackingManager) -> torch.Tensor:
+    simulator = env.simulator
+    if hasattr(simulator, "dof_forces"):
+        return simulator.dof_forces
+    robot_data = getattr(getattr(simulator, "_robot", None), "data", None)
+    if robot_data is not None and hasattr(robot_data, "applied_torque") and hasattr(simulator, "dof_ids"):
+        return robot_data.applied_torque[:, simulator.dof_ids]
+    try:
+        forces = [simulator.get_dof_forces(env_id=i) for i in range(env.num_envs)]
+        return torch.stack(forces, dim=0)
+    except Exception:
+        return torch.zeros_like(env.simulator.dof_vel)
+
+
 #########################################################################################################
 ## terms same to managers/reward/terms/locomotion.py
 #########################################################################################################
@@ -228,6 +242,113 @@ def recovery_action_rate_penalty(
     _, resolved_threshold = _resolve_recovery_threshold(env, shoulder_height_threshold)
     recovery_mask = _recovery_mask(env, resolved_threshold)
     return penalty_action_rate(env) * recovery_mask.float()
+
+
+def self_collision_cost(
+    env: WholeBodyTrackingManager,
+    force_threshold: float = 10.0,
+    body_names: tuple[str, ...] | list[str] | None = None,
+) -> torch.Tensor:
+    if body_names is None:
+        net_contact_forces = env.simulator.contact_forces_history
+        is_contact = torch.max(torch.norm(net_contact_forces, dim=-1), dim=1)[0] > force_threshold
+        return torch.sum(is_contact, dim=1).float()
+    simulator_body_names = getattr(env.simulator, "body_names", getattr(env.simulator, "_body_list", ()))
+    body_name_set = set(body_names or ())
+    if body_name_set:
+        indices = [
+            idx
+            for idx, body_name in enumerate(simulator_body_names)
+            if body_name in body_name_set
+        ]
+        if not indices:
+            return torch.zeros(env.num_envs, device=env.device)
+    else:
+        indices = list(range(len(simulator_body_names)))
+    net_contact_forces = env.simulator.contact_forces_history[:, :, indices, :]
+    is_contact = torch.max(torch.norm(net_contact_forces, dim=-1), dim=1)[0] > force_threshold
+    return torch.sum(is_contact, dim=1).float()
+
+
+def electrical_power_cost(
+    env: WholeBodyTrackingManager,
+    joint_names_regex: str = ".*_knee_joint",
+) -> torch.Tensor:
+    joint_ids = [
+        idx
+        for idx, name in enumerate(env.simulator.dof_names)  # type: ignore[attr-defined]
+        if re.match(joint_names_regex, name)
+    ]
+    if not joint_ids:
+        return torch.zeros(env.num_envs, device=env.device)
+    tau = _safe_dof_forces(env)[:, joint_ids]
+    qd = env.simulator.dof_vel[:, joint_ids]
+    mech = -tau * qd - 150.0
+    mech_pos = torch.clamp(mech, min=0.0)
+    return torch.sum(torch.square(mech_pos / 500.0), dim=1)
+
+
+def relative_shoulder_height_penalty(env: WholeBodyTrackingManager) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    if not motion_command.shoulders_indexes:
+        return torch.zeros(env.num_envs, device=env.device)
+    error = (
+        motion_command.body_pos_relative_w[:, motion_command.shoulders_indexes, 2]
+        - motion_command.robot_body_pos_w[:, motion_command.shoulders_indexes, 2]
+    )
+    return torch.sum(torch.square(error), dim=-1)
+
+
+def relative_root_orientation_penalty(env: WholeBodyTrackingManager) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    error = quat_error_magnitude(
+        motion_command.body_quat_relative_w[:, motion_command.root_index : motion_command.root_index + 1],
+        motion_command.robot_body_quat_w[:, motion_command.root_index : motion_command.root_index + 1],
+    ) ** 2
+    return error.squeeze(-1)
+
+
+def xy_rate_before_stand_penalty(
+    env: WholeBodyTrackingManager,
+    stand_threshold: float = 0.1,
+) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    if not motion_command.shoulders_indexes:
+        return torch.zeros(env.num_envs, device=env.device)
+    anchor_delta = torch.norm(
+        motion_command.prev_anchor_pos[:, :2] - motion_command.robot_anchor_pos_w[:, :2],
+        dim=1,
+    )
+    stand_error = torch.norm(
+        motion_command.body_pos_relative_w[:, motion_command.shoulders_indexes, 2]
+        - motion_command.robot_body_pos_w[:, motion_command.shoulders_indexes, 2],
+        dim=-1,
+    )
+    return torch.where(
+        stand_error > stand_threshold,
+        anchor_delta,
+        torch.zeros_like(anchor_delta),
+    )
+
+
+def reward_center_of_mass(
+    env: WholeBodyTrackingManager,
+    sigma_com: float = 0.1,
+) -> torch.Tensor:
+    motion_command = _get_motion_command_and_assert_type(env)
+    if len(motion_command.feet_indexes) < 2:
+        return torch.zeros(env.num_envs, device=env.device)
+    com_xy = env.robot_com_pos_w[:, :2]
+    left_idx, right_idx = motion_command.feet_indexes[:2]
+    z_l = motion_command.robot_body_pos_w[:, left_idx, 2]
+    z_r = motion_command.robot_body_pos_w[:, right_idx, 2]
+    single_support = torch.abs(z_l - z_r) > 0.05
+    foot_l_xy = motion_command.robot_body_pos_w[:, left_idx, :2]
+    foot_r_xy = motion_command.robot_body_pos_w[:, right_idx, :2]
+    lower_foot_xy = torch.where((z_l > z_r).unsqueeze(-1), foot_r_xy, foot_l_xy)
+    error_sq = torch.sum(torch.square(com_xy - lower_foot_xy), dim=-1)
+    reward = torch.exp(-error_sq / sigma_com**2)
+    return reward * single_support.float()
 
 
 # ================================================================================================

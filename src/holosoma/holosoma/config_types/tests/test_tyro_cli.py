@@ -138,17 +138,27 @@ def test_release_parity_stage_presets_resolve_with_expected_surface():
     assert stage2.training.name == "g1_29dof_kfa_1307_stage2_fast_sac_manager"
     assert stage3.training.name == "g1_29dof_kfa_1307_stage3_fast_sac_manager"
     assert stage1_motion_cfg.motion_file.endswith("/1307.npz")
-    assert stage1_motion_cfg.sampling_strategy == "start"
+    assert stage1_motion_cfg.sampling_strategy == "adaptive"
     assert stage2_motion_cfg.sampling_strategy == "adaptive"
     assert stage3_motion_cfg.sampling_strategy == "adaptive"
     assert stage1_motion_cfg.standing_like_reset_enabled is True
     assert tuple(stage1_motion_cfg.reset_mode_weights) == (1.0, 1.0)
+    assert stage1_motion_cfg.release_standing_relative_target is True
+    assert stage1_motion_cfg.standing_like_reset_use_diverse_quaternions is True
+    assert stage1_motion_cfg.root_body_names == ["pelvis"]
+    assert stage1_motion_cfg.shoulders_body_names == ["left_shoulder_roll_link", "right_shoulder_roll_link"]
+    assert stage1_motion_cfg.feet_body_names == ["left_ankle_roll_link", "right_ankle_roll_link"]
     assert stage1_motion_cfg.recovery_init_dataset.sample_probability == 0.0
     assert stage1_motion_cfg.enable_default_pose_prepend is False
     assert stage1_motion_cfg.enable_default_pose_append is False
-    assert stage3_motion_cfg.standing_like_reset_root_noise_scale == 1.5
-    assert stage3_motion_cfg.standing_like_reset_joint_noise_scale == 0.5
-    assert "motion_global_body_lin_vel" in stage1.reward.terms
+    assert stage3_motion_cfg.standing_like_reset_root_noise_scale == 0.0
+    assert stage3_motion_cfg.standing_like_reset_joint_noise_scale == 0.0
+    assert stage3.terrain.terrain_term.mesh_type == "trimesh"
+    assert stage1.observation is not None
+    assert "motion_anchor_pos_b" in stage1.observation.groups["actor_obs"].terms
+    assert "motion_anchor_pos_b" in stage1.observation.groups["critic_obs"].terms
+    assert "motion_body_lin_vel" in stage1.reward.terms
+    assert "electrical_power_cost" in stage1.reward.terms
     assert "reward_center_of_mass" not in stage1.reward.terms
     assert "reward_center_of_mass" in stage2.reward.terms
     assert stage1.termination.terms["bad_tracking"].func.endswith(":ReleaseParityTolerantTracking")

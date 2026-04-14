@@ -87,6 +87,12 @@ class WholeBodyTrackingManager(BaseTask):
             masses = torch.ones(len(self.body_names), dtype=torch.float32, device=self.device)
         return masses
 
+    @property
+    def robot_com_pos_w(self) -> torch.Tensor:
+        masses = self.rigid_body_masses.unsqueeze(0)
+        weighted = self.simulator._rigid_body_pos * masses.unsqueeze(-1)
+        return weighted.sum(dim=1) / torch.clamp(masses.sum(dim=1, keepdim=True), min=1e-6)
+
     def _pre_compute_observations_callback(self):
         self.base_quat[:] = self.simulator.base_quat[:]
 

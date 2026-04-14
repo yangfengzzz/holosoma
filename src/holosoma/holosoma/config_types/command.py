@@ -95,6 +95,12 @@ class MotionConfig:
     """Body name of the reference frame (in general, torso_link). """
     body_names_to_track: list[str]
     """Key body names to track, used for reward/termination computation."""
+    root_body_names: list[str] = field(default_factory=list)
+    """Explicit root body names for release-parity standing tasks."""
+    shoulders_body_names: list[str] = field(default_factory=list)
+    """Explicit shoulder body names for release-parity standing tasks."""
+    feet_body_names: list[str] = field(default_factory=list)
+    """Explicit feet body names for release-parity standing tasks."""
 
     # motion sampling related
     class MotionSamplingStrategy(str, Enum):
@@ -172,6 +178,15 @@ class MotionConfig:
 
     standing_like_reset_root_noise_scale: float = 0.0
     """Extra scale multiplier applied to root reset noise for standing-like resets."""
+
+    release_standing_relative_target: bool = False
+    """Whether to build relative targets using release standing-task anchor logic."""
+
+    standing_like_reset_use_diverse_quaternions: bool = False
+    """Whether standing-like resets should sample from a quaternion-diverse subset."""
+
+    standing_like_reset_diverse_candidate_count: int = 2048
+    """Number of quaternion-diverse standing-reset candidates to preselect."""
 
     @dataclass(frozen=True)
     class RecoveryInitDatasetConfig:

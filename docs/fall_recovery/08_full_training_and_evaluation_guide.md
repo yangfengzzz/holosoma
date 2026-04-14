@@ -6,6 +6,14 @@ Use this document when you want to run real training and evaluation. For smoke c
 
 This guide is intentionally Ground-only. Section 3 preprocessing remains external to Holosoma; this repo consumes the prepared `org_smoothed_mj` clips.
 
+Release-parity note:
+- the additive `1307` FastSAC stage presets are:
+  - `exp:g1-29dof-kfa-1307-stage1-fast-sac`
+  - `exp:g1-29dof-kfa-1307-stage2-fast-sac`
+  - `exp:g1-29dof-kfa-1307-stage3-fast-sac`
+- these now mirror the released standing-task command, reward, observation, and termination behavior as closely as practical in Holosoma
+- the remaining intentional gap is exact per-reset terrain randomization; Stage III uses Holosoma's mixed terrain preset as the closest available approximation
+
 ## 1. Prerequisites
 
 Use these defaults throughout the workflow:
@@ -95,6 +103,34 @@ Expected artifacts:
 - one or more checkpoints such as `model_*.pt`
 
 Use the resulting stand checkpoint for both same-sim evaluation and ONNX export. There is no need to retrain stand just to evaluate a different regression clip.
+
+If you want the release-style staged `1307` curriculum instead of the paper-facing stand preset, train in order:
+
+```bash
+source scripts/source_isaacsim_setup.sh
+python src/holosoma/holosoma/train_agent.py \
+  exp:g1-29dof-kfa-1307-stage1-fast-sac \
+  logger:wandb \
+  --training.seed=1
+```
+
+```bash
+source scripts/source_isaacsim_setup.sh
+python src/holosoma/holosoma/train_agent.py \
+  exp:g1-29dof-kfa-1307-stage2-fast-sac \
+  logger:wandb \
+  --training.seed=1
+```
+
+```bash
+source scripts/source_isaacsim_setup.sh
+python src/holosoma/holosoma/train_agent.py \
+  exp:g1-29dof-kfa-1307-stage3-fast-sac \
+  logger:wandb \
+  --training.seed=1
+```
+
+These presets already default to the released `1307.npz` clip path, but you can still override the motion file from the CLI if needed.
 
 ## 4. Stand Same-Sim Evaluation And ONNX Export
 

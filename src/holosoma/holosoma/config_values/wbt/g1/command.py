@@ -125,15 +125,22 @@ motion_config_recovery_low_kinetic = replace(
 motion_config_kfa_1307_release_base = replace(
     motion_config,
     motion_file=get_kfa_released_motion_path(KFA_PRIMARY_REGRESSION_CLIP_ID),
+    root_body_names=["pelvis"],
+    shoulders_body_names=["left_shoulder_roll_link", "right_shoulder_roll_link"],
+    feet_body_names=["left_ankle_roll_link", "right_ankle_roll_link"],
     use_adaptive_timesteps_sampler=False,
     start_at_timestep_zero_prob=0.0,
     freeze_at_timestep_zero_prob=0.0,
     enable_default_pose_prepend=False,
     enable_default_pose_append=False,
+    sampling_strategy=MotionConfig.MotionSamplingStrategy.ADAPTIVE,
     standing_like_reset_enabled=True,
     reset_mode_weights=(1.0, 1.0),
     standing_like_reset_joint_noise_scale=0.0,
     standing_like_reset_root_noise_scale=0.0,
+    release_standing_relative_target=True,
+    standing_like_reset_use_diverse_quaternions=True,
+    standing_like_reset_diverse_candidate_count=2048,
     recovery_shoulder_height_threshold=1.0,
     recovery_init_dataset=MotionConfig.RecoveryInitDatasetConfig(
         enabled=True,
@@ -146,7 +153,6 @@ motion_config_kfa_1307_release_base = replace(
 
 motion_config_kfa_1307_stage1 = replace(
     motion_config_kfa_1307_release_base,
-    sampling_strategy=MotionConfig.MotionSamplingStrategy.START,
 )
 
 motion_config_kfa_1307_stage2 = replace(
@@ -156,8 +162,14 @@ motion_config_kfa_1307_stage2 = replace(
 
 motion_config_kfa_1307_stage3 = replace(
     motion_config_kfa_1307_stage2,
-    standing_like_reset_joint_noise_scale=0.5,
-    standing_like_reset_root_noise_scale=1.5,
+    noise_to_initial_pose=replace(
+        init_pose_config,
+        root_pos=[0.15, 0.15, 0.15],
+        root_lin_vel=[0.75, 0.75, 0.3],
+        root_ang_vel=[0.78, 0.78, 1.17],
+    ),
+    standing_like_reset_joint_noise_scale=0.0,
+    standing_like_reset_root_noise_scale=0.0,
 )
 
 g1_29dof_wbt_command = CommandManagerCfg(
